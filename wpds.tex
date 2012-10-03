@@ -1,0 +1,1118 @@
+\documentclass{article}
+
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\config}{2}{\ensuremath{\langle #1, #2 \rangle}}
+\newcommand{\rule}{2}{\ensuremath{#1 \righthookarrow #2}}
+\newcommand{\trans}[3]{\ensuremath{#1 \rightarrow_{#2} #3}}
+
+\begin{document}
+
+This document will work up to a description of WPDSs as they are used
+in program analysis. We will start with unweighted pushdown systems,
+discussing their applications primarily in terms of verifying Boolean
+programs, then move on to the weighted versions. In order to set the
+stage for describing unweighted PDSs, we start with describing boolean
+programs, and use that as a launching point for discussing trasition
+systems, which PDSs define.
+
+\section{Boolean Programs}
+The definition of a Boolean program is very simple: a Boolean program
+is just a program where every variable has type Bool.
+
+We will defer the question of why Boolean programs are useful for a
+moment, and instead concentrate on their semantics. I'm going to leave
+details of how the semantics are specified (e.g. small/large-step
+operational, denotational, etc.) aside. What we're really interested
+in at the moment is the structure of states and which states are
+successors of which other states, but how you actually
+\emph{determine} the successor relation is less relevant.
+
+One other important difference is that Boolean programs are allowed to
+have nondeterministic branches, notated as \code{if(*)}. In terms of
+reachability, both branches of such a branch are reachable; this means
+that if you are trying to determine whether an error point is
+reachable, it can be located in either branch (or rely on variable
+settings from either branch). The same can apply to loops.
+
+Boolean programs can also have an \code{assert} statement, which marks
+an error line. Assertions don't have attached conditions, but such
+conditions can of course be simulated as \code{if(...) assert;}.
+
+The initial valuation of globals is undefined, as are the initial
+values of non-parameter locals when a procedure is called. The program
+nondeterministically sets them. (You can think of uninitialized
+variables as one way of a program receiving input.)
+
+At any given point, the state of a Boolean program consists of a
+valuation of the local variables along with a stack of activation
+records. Each activation record holds a valuation of the locals of the
+corresponding procedure as well as the address of the next statement
+to be executed. (For us, ``address'' means ``line number''; it's more
+abstract than the actual CPU's instruction pointer.)
+
+| There are similarities and differences between this presentation and
+| what you see with ``normal'' programs. There are two main
+| differences. First, we've dropped the possibility of a heap (with
+| only Boolean values we have no pointers). Second, the statement
+| addresses we store in the stack are offset from what is
+| typical. Usually the current address is stored in a register, which
+| is sort of a global location; our semantics will store the current
+| address in the current stack frame. Furthermore, if \code{foo()}
+| calls \code{bar()}, then the address in \code{foo()} that execution
+| should return to when \code{bar()} returns will be stored in
+| \code{bar()}'s activation record -- our semantics will store that
+| address in \code{foo()}'s activation record.
+
+Consider the following example, program 1:
+[TODO: insert]
+
+We will write a configuration as follows:
+\config{g=T}{\frame{1}{h=T}}; this is a possible starting
+configuration of program 1. The first element in the outer tuple is
+the global state, and the second element is the stack. The stack is
+written as a sequence of pairs, the first element of which is the
+statement that is \emph{about to execute} when control returns to that
+procedure (for the topmost element, that is ``now.'') , and the second
+element of which is a valuation of the locals. The top of the stack is
+give first. 
+
+Here is another configuration that arises later in the execution of
+program 1, starting with g=T and h=T:
+
+                 AR of f (top of stk)  AR of main
+                 -------------------   ------------
+   \config{g=T}{\frame{7}{a1=T, a2=F} \frame{3}{h=T}}
+           ^           ^         ^           ^
+        val of     next line    val of      next line to exec
+        global     to exec.     locals      after f() returns
+
+
+If the program can start in state $s_1$, execute the statement named
+by the topmost stack frame in $s_1$, and go to state $s_2$, then we
+will write $s_1 \rightarrow s_2$. Most states will have only one
+successor, but the head of a nondeterministic branch or loop will have
+two, and when calling a procedure with $n$ non-parameter locals, there
+will be $2^n$ possible successors (one for each possible valuation of
+that procedure's locals).
+
+We can picture the possible executions of the example program in the
+following figure:
+
+  T 0T               T 0F            F 0T          F 0F
+  T 1T               T 1F            F 1T          F 1F
+  T 5TT 1rT          T 5TF 1rF       F 5FT 1rT     F 5FF 1rF
+  T 6TT 1rT          T 6TF 1rF       F 6FT 1rT     F 6FF 1rF
+  T 7TT 1rT          T 7TF 1rF       F 8FT 1rT     F 8FF 1rF
+  T 5TT 7rTT 1rT     T 5FT 7rTF 1rF  T 9FT 1rT     F 9FF 1rF
+  T 6TT 7rTT 1rT     T 6FT 7rTF 1rF  T 1rT         F 1rF
+  T 7TT 7rTT 1rT     T 8FT 7rTF 1rF  T 2rT         F 2F
+  T 5TT 7rTT 7rTT... T 9FT 7rTF 1rF  T 3rT         F 4F
+       ...           T 7rTF 1rF      assert        halt
+                     T 9TF 1rF
+                     T 1rF
+                     T 2F
+                     T 3F
+                     assert
+
+
+Any path in this graph corresponds to a possible execution of the
+program. Note that there are three possibile behaviors: the program
+can not terminate (column 1), can terminate execution in an error
+(columns 2 and 3), or can complete successfully (column 4).
+
+Our goal will be to determine whether it is possible for a Boolean
+program to reach an assertion. With the example program, it is, but if
+if \code{h} and \code{g} were initialized to have the same value, it
+would not be possible. (Detecting nontermination is a harder problem,
+which we will not address.)
+
+-----------------
+Why are Boolean programs interesting?
+
+First of all, Boolean programs can act as a relatively simple
+abstraction of a program that you wish to analyze. Variables in the
+Boolean program need not correspond exactly to variables in the
+original program; instead, they can represent \emph{predicates}. For
+instance, a Boolean variable \code{b} could represent the predicate
+\code{x==y} (where \code{x} and \code{y} are variables in the original
+program).
+
+However, the real benefit comes when combining a tool that analyzes
+Boolean programs into a larger tool that performs somtehing called
+\emph{counterexample-guided abstraction refinement} (CEGAR). The
+overall method can be diagrammed as follows:
+
+[CEGAR picture]
+
+Basically what happens is the tool takes the original program and
+produces a very coarse abstraction as a Boolean program. It then
+checks that initial abstraction to figure out if there is an error in
+it, using the process we are about to describe. If not, because all
+Boolean program abstractions are sound, the original program is proved
+to be free of that kind of error.
+
+Conversely, suppose that the Boolean program has an error. The path
+through the Boolean program is passed to another tool which looks to
+see whether that path is feasible in the original program or whether
+it is an imprecision introduced by the abstraction. If the path is
+actually feasible, it means we've found a bug in the original program,
+and our analysis tool is complete.
+
+The magic of the CEGAR loop happens in the remaining case: there is a
+path to an assertion in the Boolean program abstraction but that path
+is an imprecision and doesn't correspond to something actually
+executable in the original program. In this case, the tool doesn't
+just say ``this path is not feasible'' but returns an explanation of
+\emph{why}. That \emph{why} is turned into some additional predicates
+that the Boolean program should track, which will increase the
+precision. The Boolean program abstraction is \emph{refined} by adding
+these prediates as well, and the new abstraction is again checked for
+correctness starting the cycle anew.
+
+This process (though using different techniques to check the Boolean
+programs) is the foundation of the SLAM tool from Microsoft
+Research. This tool is able to check many properties of Windows device
+drivers, and has since the release of Vista been a part of the
+official Windows Driver Development Kit under the name Static Driver
+Verifier (SDV). Getting a clean bill of health from the SDV is needed
+for the Windows logo. 
+
+Drivers are an attractive target for verification because they tend to
+be relatively small, tend to not make heavy use of the heap, have many
+well-defined properties to check, and are relatively important
+(because bugs will bring down your whole system). From Microsoft's
+perspective, drivers are an attractive target because if a third-party
+driver blue-screens your system, they get the blame anyway.
+
+-----------------
+
+
+\section{Transition Systems}
+
+We can formalize the type of structure pictured in Figure 2 as
+something called a \emph{transition system}. The idea of a transition
+system is really quite simple: it's a (possibly-infinite) collection
+of states along with a \emph{transition relation} that describes how
+states are related. Formally, a transition system is a pair $(S,
+\rightarrow)$ where $S$ is some set and $\rightarrow \subseteq S
+\times S$. (We will write $p \rightarrow q$ for $(p, q) \in
+\rightarrow$.) It can be visualized as a possibly-infinite directed
+graph.
+
+When modeling a Boolean program $B$, we will treat the semantics of
+the program as a transition system where the states $S$ are the set of
+possible configurations of the program $B$ and the transition relation
+$\rightarrow$ is any state transition that respects the semantics of
+the program $B$.
+
+--------------------------
+An example of another transition system is defined by the
+\lambda\ calculus. States in this transition system correspond to
+terms in the \lambda\ calculus in De Bruijn form, and the transition
+relation sets $s \rightarrow t$ exactly when $t$ can be obtained from
+$s$ via a \beta\ reduction. (We use De Bruijn form so we can ignore
+\alpha\ renamings, which don't change the ``meaning'' of a
+\lambda\ term. Of course, using ``normal'' \lambda\ notation and
+including \alpha\ renamings in the transition relation, and/or
+including \eta\ reductions, would also result in a perfectly valid
+transition system.)
+
+The following diagram shows some portions of this transition system,
+written in normal notation instead of De Bruijn for clarity:
+
+  [ diagram of reductions of something diverging then converging
+    and terminating, then (\x.xx)(\x.xx), then (\x.xxx)(\x.xxx) ]
+
+Starting from any term in this transition system can result in (1)
+eventually reaching a normal form, (2) reaching a loop in the
+transition system, or (3) reaching an infinite chain of transitions
+that never reaches a normal form. All three cases are illustrated
+above.
+
+--------------------------
+
+We are going to think of the semantics of a Boolean program as a
+transition system, and essentially check reachability properties on
+this pushdown system. However, the transition system can be infinite,
+and so we need a finite representation. That is where pushdown systems
+come into play. (Figure 2 illustrates an infinite transition system
+borne out of a program. That program has the property that if
+execution reaches the infinite portion, then it will never terminate,
+but this does not need to be the case: it is possible to have a
+program with an infinite number of reachable states but where from any
+configuration, a halting state is reachable.)
+
+
+\section{Pushdown Systems}
+
+A pushdown system is a way of describing a transition system where:
+\begin{enumerate}
+\item Every state can be written \config{p}{s} where $p$ is a
+  ``control location'' drawn from a finite set $P$ and $s$ is a stack
+  of items drawn from a finite set $\Gamma$. (The name ``control
+  location'' is misleading here for our purposes: when modeling a
+  Boolean program, we will use the control location to hold
+  information about the current valuation of global variables.)
+\item To decide what states $q$ in the transition system are
+  successors of a given state $p$ (i.e. $p \rightarrow q$), you need
+  only look at the top item in the $p$'s stack. The transition may
+  push or pop items from the stack (as well as change the control
+  location), though we restrict it from popping more than one item.
+\end{enumerate}
+
+If you are familiar with a pushdown automaton (PDA), a PDS is very
+similar except there is no input tape or input charracter component of
+the transitions. If you like, you can think of a PDS as exploring the
+configuraton space of a PDA when you have complete control over the
+input.
+
+The two above restrictions means that we can define a PDS as follows:
+
+\begin{defintion} A pushdown system (PDS) $\script{P}$ is a triple $(P, \Gamma,
+  \Delta)$ where $P$ is a finite set (the ``control locations''),
+  $\Gamma$ is also a finite set (the ``stack alphabet''), and $\Delta$
+  is a set of rules of the form
+  \rule{\config{p}{\gamma}}{\config{q}{w}} where $p, q \in P$, $\gamma
+  \in \Gamma$, and $w \in \Gamma^*$.
+\end{definition}
+
+A PDS defines a transition system in the following way. The set of
+states in the transition system is the set of all configurations
+\config{p}{w} for $p \in P$ and $w \in \Gamma^*$. The transition
+relation is defined as follows: $\config{p}{\gamma\alpha} \rightarrow
+\config{q}{w\alpha}$ (with $\gamma \in \Gamma$ and $\alpha \in
+\Gamma^*$) if and only if $\rule{\config{p}{\gamma}}{\config{q}{w}}$
+is a rule in the PDS.
+
+Finally, to simplify the post* and pre* algorithms (presented later),
+we add one more restriction: every PDS rule must replace the top item
+on the stack with either zero, one, or two other elements. (This is
+not a fundamental restriction: it is possible to simulate any PDS
+without this restriction by one with it, simply by adding new
+intermediate states.) Rules then either one of the following forms:
+\begin{itemize}
+\item \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} (which is called a
+$\Delta_0$ rule)
+\item \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} (a $\Delta_1$
+  rule)
+\item \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} (a
+  $\Delta_2$ rule)
+\end{itemize}
+
+
+We will be interested in two kinds of reachability questions: forward
+reachability, called post*, and backward reachability, called pre*. In
+both cases, we ask what is reachable from a starting set of
+configurations $C$, and the answer will be the set of reachable (or
+reaching) configurations. The definitions are as follows:
+\begin{itemize}
+\item $post^*_{\script{P}}(C) = \{p' | \exists p\in C. p \rightarrow^*
+  p'\}$
+\item $pre^*_{\script{P}}(C) = \{p | \exists p'\in C. p \rightarrow^*
+  p'\}$
+\end{itemize}
+In both cases, $\rightarrow^*$ is the reflexive transitive closure of
+the transition relation defined by the PDS $\script{P}$. I'll also
+abuse notation and use $post^*(p)$ to mean $post^*(\{p\})$, and
+similarly for pre*.
+
+Reachability questions can then be expressed in two ways: if we want
+to know whether a configuration $p'$ is reachable from a configuration
+$p$, we can ask whether $p' \in post^*(p)$ or whether $p \in
+pre^*(p')$. (In the case of modeling Boolean programs, $p$ will
+typically be the starting configuration (or the set of starting
+configurations) and $p'$ will be the error configuration (or set of
+error configurations).
+
+So by expressing a transition system as a PDS we have solved the
+problem of having to finitely represent an infinite transition system,
+but we are not done: the input and output of both pre* and post* may
+themselves be infinite sets, and we need a way of representing those
+sets in such a way that we can still compute pre* and post*.
+
+\subsection{Representing Sets of Configurations}
+
+In order to represent a set of configurations symbolically (and
+finitely), we will use a slightly-modified form of finite
+automaton. For a PDS $\script{P}$, we will define a
+$\script{P}$-automaton as $(Q, \delta, F)$. (I'll usually drop the
+$\script{P}$ suffix and just refer to it as an automaton or
+configuration automaton.) $Q$ is a set of states, and must be a
+superset of $P$ (the PDS's set of states); $\delta: Q \times
+\Gamma_\epsilon \rightarrow \powerset{Q}$ is the transition function;
+$F$ is the set of accepting states. The automaton's alphabet (normally
+$\Sigma$) is the same as the PDS's stack alphabet $\Gamma$, plus
+\epsilon.
+
+A configuration automaton $\script{A}$ accepts a configuration
+\config{p}{w} if $\script{A}$ starts in its state $p$, follows
+transitions according to the next unread symbol in $w$ (starting from
+the top of the stack), and can end in an accepting state $f \in
+F$. (This is just like the standard definition of acceptance in an FA
+except that the machine starts in the configuration's state instead of
+one fixed start state $q_0$, and the symbols it reads are from the
+configuration's stack, top-to-bottom.)
+
+For instance, the following atuomaton accepts the configuration
+\config{p}{abc}:
+
+
+
+$\script{P}$-automata can, of course, represent either finite or
+infinite sets of configurations of $\script{P}$. However, not every
+infinite set of configurations can be reprsented by a
+$\script{P}$-automaton, just like not every infinite set of normal
+strings can be represented by a standard finite automaton. If a set of
+configurations \emph{can} be represented, then we say that class is
+``regular''.
+
+\subsection{The post* Algorithm}
+
+An interesting and important fact is that for any PDS, both $post*(C)$
+and $pre*(C)$ are regular if C is regular. Furthermore, both can be
+computed starting from a automaton representation of $C$ by a simple
+process. We will discuss the process for post* in this section, and
+pre* in the next. Both have a similar flavor; which is easier is a
+matter of some debate.
+
+Both processes can be explained by presenting one or more simple
+\emph{saturation rules}. A saturation rule tells you to find a
+transition in the automaton and a rule in the PDS which match on their
+state and stack symbol, and then add one or more other transitions if
+they are not already present. This will hopfeully become clear
+momentarily. 
+
+Conceptually, you just check to see if there are any saturation rules
+that can be applied; if there are, then you apply them, but if not,
+the process is complete and the automaton now holds the set of
+configurations that is the post* of what you started with. In an
+actual implementation, this process becomes guided by a worklist; we
+will examine that after describing the saturation rules.
+
+
+Let's look at our first post* saturation rule. Suppose our automaton
+looks like this, in part:
+
+
+
+The squiggly bit on the right represents possibly a bunch of states
+and transitions, but it could also be none at all. (In the extreme
+case, the node labeled $n$ could be the same as $p$ in which case the
+$\gamma$ transition is a self loop, and $p$ could be accepting.) Call
+$L(n)$ be the set of strings accepted by $\script{A}$ starting from
+state $n$.
+
+What does this mean? This means that a configuration is accepted by
+this machine if it takes the form \config{p}{\gamma\alpha}, where
+$\alpha$ some string in $L(n)$.
+
+Now consider the PDS rule
+\rule{\config{p}{\gamma}}{\config{p'}{\gamma'}}. This rule means that,
+in the transition system defined by $\script{P}$, a successor of
+\config{p}{\gamma\alpha} is \config{p'}{\gamma'\alpha}. This means
+that \config{p'}{\gamma'\alpha} must be accepted by the post*
+automaton.
+
+What can we do to make this happen?
+
+The answer is remarkably simple: we just add a transition
+$\trans{p'}{\gamma}{n}$.
+
+In other words, we have our first saturation rule (we will have to
+revise these rules later however, because of the presence of
+$\epsilon$ transitions):
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} and a transition
+   \trans{p}{\gamma}{n}, add a new transition
+   \trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
+
+OK. So now what should we do about $\Delta_0$ and $\Delta_2$ rules?
+Before we go further, you might want to try to predict the saturation
+rules for these.
+
+Let's look at $\Delta_0$ first. This is actually very similar to the
+$\Delta_1$ case we just did:
+
+Consider the PDS rule
+\rule{\config{p}{\gamma}}{\config{p'}{\epsilon}}. This rule means that,
+in the transition system defined by $\script{P}$, a successor of
+\config{p}{\gamma\alpha} is \config{p'}{\alpha}, and the latter
+configuration must be accepted by the post* automaton.
+
+To make this happen, we just add a transition like last time except
+this time we make in an $\epsilon$ transition:
+$\trans{p'}{\gamma}{n}$.
+
+Formally, we have the following rule:
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} and a transition
+   \trans{p}{\gamma}{n}, add a new transition
+   \trans{p'}{\epsilon}{n}.
+
+Finally, consider the $\Delta_2$ rule
+\rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}}. This rule
+means that, in the transition system defined by $\script{P}$, a
+successor of \config{p}{\gamma\alpha} is
+\config{p'}{\gamma'\gamma''\alpha}. This means that
+\config{p'}{\gamma'\gamma''\alpha} must be accepted by the post*
+automaton.
+
+This one is a bit more complicated, because we have to add \emph{two}
+transitions. But what should be the intermediate state? For reasons
+which we will describe later, we add one new state for each
+$(p',\gamma')$ pair; we will call this state $q_{p',\gamma'}$.
+
+Thus the automaton picture looks as follows:
+
+And we have the saturation rule
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} and a
+   transition \trans{p}{\gamma}{n}, add new transitions
+   \trans{p'}{\gamma'}{q_{p',\gamma'}} and
+   \trans{q_{p',\gamma'}}{\gamma''}{n}, adding the state $q_{p',\gamma'}$
+   if necessary.
+
+
+\subsubsection{Correcting our post* saturation rules for $\epsilon$
+  transitions}
+
+Unfortunately, the saturation rules in the preceeding section are not
+yet completely correct. To illustrate the problem, consider a PDS with
+the following rules:
+   p A -> p B C
+   p B -> p eps
+   p C -> p D
+
+By applying each of these rules in order, we see that the
+configuration \config{p}{D} is in $post*(\config{p}{A})$.
+
+However, let's apply the saturation rules exactly as given above,
+starting from an automaton that accepts just the configuration
+\config{p}{A}. (You may want to try this yourself before reading on!)
+
+We start with
+
+then apply the $\Delta_2$ saturation rule because we have a PDS rule
+\rule{\config{p}{A}}{\rule{p}{B C}} and a transition \trans{p}{A}{f},
+and get this:
+
+then we apply the $\Delta_0$ saturation rule because we have a PDS
+rule \rule{\config{p}{B}}{\config{p}{\epsilon}} and a transition
+\trans{p}{B}{q_{p,B}}, and arrive at:
+
+You might hope that we can now apply the $\Delta_1$ transition rule
+with the PDS rule \rule{\config{p}{C}}{\config{p}{D}}, but as written
+it does not apply: there is no transition starting at $p$ with symbol
+$C$.
+
+Of course, the problem is that there's a \emph{path} that starts at
+$p$ and begins by reading $C$, but that path starts with an \epsilon
+transition.
+
+(Note: a similar situation can arise with the \epsilon transition on
+the ``other side'' of the transition we're interested in, but only if
+the initial query automaton has certain structures.)
+
+We can handle this situation in two ways. The first is we modify our
+three saturation rules so that they look for \emph{paths} rather than
+just single transitions. If we use the notation \epspath{p}{\gamma}{n}
+to mean a path with (optionally) some \epsilon transitions, then a
+$\gamma$ transition, then (optionally) some more \epsilon transitions,
+then our revised rules are:
+
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} and a path
+   \epspath{p}{\gamma}{n}, add a new transition
+   \trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} and a path
+   \epspath{p}{\gamma}{n}, add a new transition
+   \trans{p'}{\epsilon}{n}.
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} and a path
+   \epspath{p}{\gamma}{n}, add new transitions
+   \trans{p'}{\gamma'}{q_{p',\gamma'}} and
+   \trans{q_{p',\gamma'}}{\gamma''}{n}, adding the state
+   $q_{p',\gamma'}$ if necessary.
+
+
+The other option is to perform on-the-fly \epsilon closure. We'll
+leave the \epsilon transitions in-place, but just ensure that we'll
+never need to use them. To do this, we add one more rule:
+
+    If there is a transition \trans{q}{\epsilon}{q'} and
+    \trans{q'}{\sigma}{q''} (where $\sigma$ can either be a stack
+    symbol in $\Gamma$ or $\epsilon$), add the transition
+    \trans{q}{\sigma}{q''}.
+
+
+\subsubsection{The extra state in $\Delta_2$ rules.}
+
+In this section we will attempt to explain the intuition behind the
+behavior of the state added when dealing with $\Delta_2$ rules.  In
+particular, we want to answer (1) why do we have to ``combine'' states
+to begin with (we'll see what we mean by that), (2) why can we combine
+the states that we do, and (3) why don't we combine more.
+
+\subsubsubsection{Why do we have to combine states?}
+
+Consider the PDS with the following rule:
+
+  \rule{\config{p}{a}}{\config{p}{ab}}
+
+Starting from the configuration $c = \config{p}{a}$, it is hopefully
+clear that $post*(\{c\})$ should be the set of configurations of the
+form \config{p}{ab*}. (That is, the stack top is $a$ and under it is
+any number of $b$s.
+
+Let's see what happens if we use a different $\Delta_2$ saturation
+rule -- one that at first glance seems like it could be reasonable,
+and you might have thought of -- so that it will \emph{always} add a
+new state. For simplicity's sake, I'll use the version that ignores
+\epsilon transitions, but of course we still need to handle that
+somehow. Stated formally:
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} and a
+   transition \trans{p}{\gamma}{n}, add a fresh state $q$ then add
+   transitions \trans{p'}{\gamma'}{q} and \trans{q}{\gamma''}{n}.
+
+Runnng post* with this rule gives the following. We start with the
+query automaton that represents $\{c\}$:
+
+Then apply the $\Delta_2$ saturation rule:
+
+Then apply the $\Delta_2$ saturation rule again:
+
+And again:
+
+And again:
+
+You see the problem.
+
+If we want post* to terminate, we want to be able to avoid adding this
+chain of fresh states. The approach we'll take is to \emph{combine}
+all of these states -- combine states with a common source and
+symbol. So we take all of the states in the dotted region and combine
+it into one:
+
+
+Note that the self-loop on $q_{p,a}$ is present because there are
+transitions from one $q$ to another $q$ in the expanded
+version. Furthermore, note that this is the same automaton we get if
+we apply the correct $\Delta_2$ saturation rule:
+
+
+\subsubsubsection{Why can we combine these states?}
+
+Take the same PDS as before, but add a rule to it:
+
+    \rule{\config{p}{a}}{\config{p}{b}}
+
+and then take our partially-done expanded post* automaton:
+
+Now what can we do? Well, we can run our $\Delta_1$ saturation rule
+and add the following transitions:
+
+
+An interesting fact emerges. Every transition we added before to one
+of our fresh states will prompt us to add the same \emph{additional}
+transitions (just to each respective state). Call these transitions
+$T$.  Furthermore, because we only ever add transitions starting from
+a $p$ state (except when first creating a new fresh state), every
+accepting path that traverses the fresh states at all will take one
+transition in $T$ then follow the ``spine'' of fresh states to the
+end. Finally, every transition along the spine will have the same
+label because they were all added as the second transition when
+looking at the same $\Delta_2$ rule.
+
+But we can express that a different way: we can collapse all the fresh
+states into one, which gives us the correct result.
+
+\subsubsubsection{Why can't we combine more?}
+
+You just can't.
+
+I don't have as convincing an argument to make here; just it doesn't
+make sense.
+
+
+\subsection{The pre* algorithm}
+
+Now that we've looked at post*, let's look at pre*. In many ways this
+is simpler. Before continuing, you may want to try to produce the
+saturation rule(s) yourself: remember that our goal is to produce an
+automaton that expresses the set of configurations \emph{from} which a
+configuration in the original query automaton is reachable. The
+presentation below (in accordance with the literature) will present
+just one saturation rule for any PDS rule
+\rule{\config{p}{\gamma}}{\config{p}{w}} ($w \in \Gamma^*$), but you
+can either do that or just give separate saturation rules for $\Delta_0$,
+$\Delta_1$, and $\Delta_2$ PDS rules as we did for post*.
+
+Let's think through what we want in a similar way as before. Suppose
+that we have a configuration $c = \config{p}{w}$ that is
+represented by our current automaton. We want to add some
+backwards-reachable configurations. Well, how did we get to $c$? If we
+have a rule \rule{\config{p'}{\gamma}}{\config{p}{w'}} where $w'$ is a
+prefix of $w$ (let $w = w'w''$), that gives us one possible way: we
+start in the configuration \config{p'}{\gamma w''}, apply that rule,
+then arrive in $\config{p'}{w'w''} = c$.
+
+How does this look in the automaton world? If $c$ is accepted by the
+current automaton, then there's a series of transitions out of $p$
+labeled with each symbol in $w'w''$. To accept \config{p'}{\gamma
+  w''}, we just need to add a $\gamma$ transition from $p'$ to the
+point at which we've skipped over $w'$. Graphically:
+
+
+
+For $\Delta_0$ rules, we add a self-loop on a $p$ state.
+
+That's all there is to it.
+
+
+\section{From Unweighted to Weighted PDSs}
+
+Above we described pushdown systems from the perspective of doing
+model checking -- it is explicitly exploring the state space of a
+program. Even when paired with something like SLAM, which is doing
+iterative refinement of a ``real'' program, we are still doing
+explicit-state model checking of the current Boolean program model.
+
+Practically speaking it can be useful to think about WPDSs in a bit
+different terms. While they \emph{are} a way of defining a weighted
+transition system blah blah blah, what they are usually used for is
+essentially dataflow analysis (abstract interpretation) over some
+program. I'll try to describe things in those terms. In the final
+section, I'll try to relate that picture to the somewhat more abstract
+presentation in the literature.
+
+Finally, one notion that I didn't get right away was what is meant by
+\emph{weight}. What you should not have as a model in your mind is
+something like a weighted graph from graph theory, like you might run
+some weighted shortest path problem on. This picture has only enough
+truth in it that I can't say it's \emph{completely} incorrect. Weights
+in general are a much more abstract notion; as you'll see momentarily,
+in our setting, they will represent abstract transformers.
+
+\subsection{Weights for dataflow analysis and the MOAVP goals}
+
+Consider some typical dataflow analysis. There's some domain $D$ of
+possible dataflow facts (e.g. $\powerset(vars \times
+\bbN_\bottom^\top)$ for constant propagation and a ``meet'' ($\meet$)
+that is used to combine dataflow facts when paths in the program
+converge. (We are using a dataflow-analysis viewpoint: $\bottom$
+represents ``anything is possible'' and $\meet$ moves us closer to
+$\bottom$.) When propagating information ``through'' a basic block
+$b$, you use some transformer $\tau_b: D \rightarrow D$ to translate
+the dataflow fact before the block to the one after the block, or vice
+versa (depending on whether you're doing a forwards or backwards
+analysis). The goal is to find the ``meet over all valid paths''
+solution from the program's start to its finish.
+
+(If you're familiar with ``meet over all paths'' but not ``valid
+paths'', a ``valid path'' is one where control does not use some call
+site $c$ to call a function \code{foo} but then return to a different
+call site. This is what gives us context sensitivity.)
+
+When doing dataflow analysis with a WPDS, we actually treat the set of
+transformers $\tau_b$ explicitly. Our \emph{weight domain} then
+consists of the set of these transformers and their compositions, and
+some operations on them. We need two operations, and both are pretty
+familiar.
+
+The first opreation is composition. If we take some path through the
+program where the transformers are $\tau_1$, $\tau_2$, and $\tau_3$,
+then a transformer that represents the net effect of the path is just
+$\tau_3 \circ \tau_2 \circ \tau_1$. Note, however, how using $\circ$
+``reverses'' the path; i.e. the transformer that was used last appears
+first when we write it out notationally. This is inconvenient, so we
+invent a ``reversed composition'' operator. Since we have to make
+something up anyway, we'll match the usual WPDS literature and use
+$\tau_1 \extend \tau_2 \extend \tau_3$ for $\tau_3 \circ \tau_2 \circ
+\tau_1$. We pronounce $\extend$ as ``extend'', but really it's just
+function composition.
+
+The second operation is meet, $\meet$. We know how to meet two data
+values $d_1$ and $d_2$, but not necessarily transformers. But it's
+pretty simple: $\tau_1 \meet \tau_2$ is going to be a new function
+defined as follows: $(\tau_1 \meet \tau_2)(d) = (\tau_1(d)) \meet
+(\tau_2(d))$. In other words, the meet of two functions takes its
+argument, applies each of the two functions individually, then meets
+the result.
+
+This gives us the elements we'll need for our weight domain. 
+
+When computing a forwards-flow analysis then, what our goal is as
+follows:
+    - For each program point p
+        - paths = {all valid paths from start to p}
+        - label p with meet(paths)
+This labels each point $p$ with an aggrigate transformer that
+represents all possible ways of getting to $p$. We can then apply that
+transformer to the starting condition to obtain the dataflow fact that
+holds at $p$. Forwards-flow problems will be computed with weighted
+post*.
+
+When computing a backwards flow analysis, the goal is similar:
+    - For each program point p
+        - paths = {all valid paths from p to finish}
+        - label p with meet(paths)
+This labels each point with an aggrigate transformer that represents
+all possible ways of getting from that point to the end of the
+program. Backwards-flow problems will be computed with weighted pre*.
+
+Both of these problems generalize. We can start from any regular set
+of configurations instead of just a single start node, or end in any
+regular set of configurations. For instance, we could ask about
+configurations where we specify not just a program point but also a
+set of possible stacks: perhaps we are only interested in a point $p$
+if \code{foo} is somewhere on the stack.  Such \emph{stack-qualified
+  queries} are a strict increase in power of WPDSs relative to other
+methods for context-sensitive analysis, such as Shriri-Pnuelli's
+framework (with their $\Phi$ functions).
+
+
+\subsection{Creating a WPDS model of a program}
+
+TODO
+
+
+\subsection{Representing weighted configuration sets}
+
+We will represent sets of weighted configurations in almost the same
+way as before. However, instead of standard finite automata, we will
+use a weighted FA (WFAs). Structurally, this just means that each
+transition is annotated with a weight. (Later we'll add weights to
+states as well.)
+
+Unfortunately, the interpretation of these WFAs differs slightly
+between pre* and post*.
+
+\subsubsection{Interpreting the pre* automaton}
+For pre*, the interpretation is still pretty simple. In the unweighted
+case, a path from an initial state $p$ to an accepting state with
+$\gamma_1\gamma_2\dots\gamma_n$ as the edge symbols indicates that the
+configuration $c = \config{p}{\gamma_1\gamma_2\dots\gamma_n}$ is
+contained within the set in question. In the weighted case, it
+indicates that $c$ is accepted \emph{with weight} $w_1 \extend w_2
+\extend \dots \extend w_n$, where $w_i$ is the weight on the
+transition that corresponds to $\gamma_i$.
+
+Actually, the previous sentence is a lie. What it indicates is that
+there is \emph{some} set of paths in the WPDS's transition system for
+which the meet of the weights of those paths is $w_1 \extend w_2
+\extend \dots \extend w_n$. However, it may be the case that the
+automaton has \emph{multiple} paths that accept the same
+configuration. (Don't get paths through the WPDS's transition system
+confused with paths through the automaton!) In such a case, we need to
+look at every such path, take its weight, then take the meet of all of
+those.
+
+\subsubsection{Interpreting the post* automaton}
+
+Interpreting the weights of the post* automaton is a bit
+different. Most things stay the same regarding what paths through the
+WFA we look at and such, but computing the weight of a path is the
+opposite. Here's the rule: the weight of a path $\gamma_1 \gamma_2
+\dots \gamma_n$ is $w_n \extend \dots \extend w_2 \extend w_1$ (with
+$w_i$ being the weight on the transition with symbol $\gamma_i$, as
+before). In other words, it's the reverse of before\footnotemark.
+
+\footnotetext{In a bit of irony this means we could revert to using
+  $\circ$ instead of $\extend$, then write it in forward
+  order. However, I'll stick with $\extend$ to match the existing
+  literature.}
+
+In the remainder of this section, I'll attempt to explain why.
+
+You can kind of think of following a path in the pre* automaton in the
+following way. If we want to know whether a WPDS is in an accepted
+configuration, we successively pop off each stack symbol while taking
+a corresponding transition.
+
+-- something missing about why PA makes sense --
+
+Interpretation of the post* automaton is a bit different. Because
+post* and pre* are the opposite, we have to do the opposite thing:
+Instead of running the WPDS then the WFA, we will do the opposite, and
+run the WFA followed by the WPDS. We also think of the interpretation
+of the WFA in the opposite: Instead of saying that a configuration is
+accepted if we can pop it off using WFA transitions, we'll say it's
+accepted if we can start with an empty stack and \emph{push} symbols
+to get the stack in question (pushing a symbol for each WFA
+transition).
+
+But there's something funky here: a path with symbols $\gamma_1
+\gamma_2 \dots \gamma_n$ will, if we just push the symbols in
+sequence, give us the stack $\gamma_n \dots \gamma_2 \gamma_1$, with
+$\gamma_n$ at the top of the stack. This isn't the interpretation we
+meant: transitions out of the initial states should be the start
+symbols. To get at the stack with $\gamma_1$ at the top, we need to
+start at the other end -- in other words, we need to push the symbols
+in the \emph{reverse order} of the path we accept them.
+
+(Note that if we ignore weights, we haven't changed anything from the
+unweighted post* case! If we want to know if a configuration is
+accepted regardless of its weight\footnotemark, we still follow
+transitions starting from the top of the stack, same as before. The
+reversal of the path argument has to deal with how the weights are
+built up only.)
+
+The fact that we conceptually pushed $\gamma_n$ first means that we've
+arrived at our rule: the \emph{weight} of a path $\gamma_1 \gamma_2
+\dots \gamma_n$ is actually $\gamma_n \extend \dots \extend \gamma_2
+\extend \gamma_1$.
+
+
+
+
+
+\footnotetext{One caveat: if a configuration has the weight $\top$
+  it's reasonable to say that is unreachable. If no transitions in the
+  query automaton and no WPDS rules have weight $\top$ however, this
+  will never arise.}
+
+
+\subsection{Putting it all together}
+
+What we are eventually interested in is the set of dataflow
+values that can arise at a program point $n$. This corresponds to
+multiple possible configurations -- and we want the meet of the weight
+of each of those configurations. This leads to the following, naive,
+algorithm for doing forwards-flow dataflow analyses:
+    - Set up a query automaton from the initial configuration(s)
+    - Run post*
+    - For each prgoram point $n$
+          - $w_{all} = \top$
+          - For \emph{every path} $p$ that starts with $n$ from an
+            initial state to an accepting state
+              - Let $w$ be the weight of the path (using $\extend$),
+                remembering that we are extending in reverse
+              - $w_{all} = w_{all} \meet w$
+          - Label $n$ with $w_{all}$
+
+Later we'll look at getting rid of that explicit ``look at all
+paths.''
+
+The corresponding algorithm backwards-flow analysis is similar, but
+this is a complication. There can be configurations in the pre*
+automaton that are not actually reachable from the initial state. For
+instance, if we run pre* on the example from section blah (from the
+program's exit state with no stack), we get the following automaton:
+
+This automaton accepts configurations like \config{p}{foo_3 main_3}
+where $main_3$ isn't a call site!
+
+This configuration doesn't make sense as far as the program's
+semantics are concerned, but the WPDS's transition system doesn't know
+that. As far as the transition system is concerned, if it starts in
+the configuration \config{p}{foo_3 main_3}, then it can get to the
+final state -- and indeed this is the case. 
+
+So what we want to do is simple conceptually. We will run an
+\emph{unweighted} post* from the set of initial configurations, then
+intersect the result with our WFA from pre*. (WFA intersection
+proceeds as normal FA intersection, except that weights are computed
+in the resulting automaton by ???.) We then examine *this* automaton.
+
+  The reason this didn't come up in the unweighted case is that we
+  were asking a different question. At first glance we'd still have
+  the same problem, since the unweighted pre* automaton would still
+  accept that configuration. However, in the unweighted case we'd just
+  ask whether a particular configuration (or any of a set of
+  configurations) is accepted. Assuming our configuration of interest
+  isn't one of these infeasible configurations, their presence doesn't
+  matter.
+  
+  The problem comes from the fact that now we want to get the dataflow
+  fact for some node $n$, and we do it by looking at all of the paths
+  in the WFA that start with $n$. But now the presence of infeasible
+  paths matters, because we want to exclude them.
+
+So here is the process of carring out a backwards dataflow problem:
+    - C_end = query automaton for exit configuration(s)
+    - a_pre = pre(C_end)
+    - C_start = query automaton for starting configuration(s)
+    - a_post = post(C_start)
+    - answer = a_pre \cap a_post
+    - For each prgoram point $n$
+          - $w_{all} = \top$
+          - For \emph{every path} $p$ in answer that starts with $n$
+            from an initial state to an accepting state
+              - Let $w$ be the weight of the path (using $\extend$,
+                remembering we are extending ``forward'')
+              - $w_{all} = w_{all} \meet w$
+          - Label $n$ with $w_{all}$
+
+
+\subsection{Weighted post*}
+
+Finally, we have to discuss how to carry out the post* and pre*
+algorithms. We'll start with post*.
+
+The general idea of both algorithms is very similar to the unweighted
+case. Really the only difference is we will change each rule from
+something of the form ``look for a PDS rule and FA transition blah
+blah and add a new transition blah blah'' and turn it into ``look for
+blah blah and \emph{update the weight on transition} blah blah''
+(instead of just adding it). We run the saturation rules until not
+only are there no new transitions that are necessary but until no rule
+will change any weight.
+
+So let's look at the $\Delta_1$ case. The unweighted rule was
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} and a transition
+   \trans{p}{\gamma}{n}, add a new transition
+   \trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
+
+Let's look at what it means in the weighted case. Suppose that the
+weight of the PDS rule is $w_r$, the weight of the transition
+\trans{p}{\gamma}{n} is $w_t$, and the weight of the transition
+\trans{p'}{\gamma'}{n} is currently $w$. If the latter transition does
+not yet exist, then we'll set $w = \top$. (Remember, $\top \meet x =
+x$. It essentially reflects an impossible weight.) Conceptually, you
+can think of \emph{every} transition being initially present in the
+automaton but with weight $\top$, though you have to revise some other
+explanations in light of this.
+
+Here's a diagram of the transition system and the WFA:
+
+Suppose we have some path $\pi$ in the WFA that starts at $n$ and
+leads to an accepting state, and that path has weight $w_\pi$. (And
+for sake of simplicity of the explanation, suppose there is only one
+path with $\pi$'s labels.)
+
+// start eding here invalid markup
+This means that it is possible to start in the transition system from some
+  configuration in the query set and arrive at the configuration
+  \config{p}{\gamma \pi} while the MOAVP weight is $w_t \extend
+  w_\pi$.\footnotemark
+\item If we Similarly, the MOAVPs solution from the query set to
+  \config{p'}{\gamma'\pi} is $w_r \extend w_t \extend w_\pi$}
+\end{itemize}
+
+\footnotetext{Really it's the meet of all MOAVPs solutions from
+  anything in the query set: ....}
+
+Here's a diagram of the transition system and the WFA:
+
+If we suppose that this is the first time we're looking at this
+$\Delta_1$ rule, there are at least two sets of possibilities for how
+to get to the configuration \config{p'}{\gamma'\pi}. Because
+$\gamma'\pi$ was already accepted, whatever paths we found before is
+one such set. The second way is what we just discovered: use one of
+the ways to get to the configuration \config{p}{\gamma \pi}, then the
+PDS $\Delta_1$ rule we are looking at. Here is a picture:
+
+We want the MOAVPs solution, so we need to take the meet of all of
+these paths. The weight of the first set of paths is $w_{t'} \extend
+w_\pi$.\footnotemark The weight of the second set of paths is $w_t
+\extend w_\pi$ to get to \config{p}{\gamma \pi} then the weiht of the
+rule, giving $w_r \extend w_t \extend w_\pi$.
+
+\footnotetext{Here and in the next moment we are using a fact which I
+  haven't really told you, which is that $a \extend (b \meet c) = (a
+  \extend b) \meet (a \extend c)$. This doesn't necessarily always
+  hold -- but it must for WPDSs to work.}
+
+This means that the new weight for \config{p'}{\gamma' \pi} should be
+$(w_{t'} \extend w_\pi) \meet (w_r \extend \w_t \extend w_\pi)$ which
+equals $(w_{t'} \meet (w_r \extend w_t)) \extend w_\pi$.
+
+Note that we can achieve this (at least for this path) by updating
+$w_{t'}$ to be $w_{t'} \meet (w_r \extend w_t)$. Furthermore, you can
+repeat this argument for any other paths and configurations that would
+be affected by this change, and find out that the same weight will
+work out for each of them.
+
+This gives our saturation rule:
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} with weight $w_r$,
+   a transition \trans{p}{\gamma}{n} with weight $w_t$, and a
+   transition \trans{p'}{\gamma'}{n} with weight $w_{t'}$, update the
+   weight on the transition according to $w_{t'}' = w_{t'} \meet (w_r
+   \extend w_t)$. If \trans{p'}{\gamma'}{n} is not present, add it
+   with weight $w_t \extend w_r$.
+
+(Note that the case where it was not present will result in the same
+   effect as treating it as being there but with weight $\top$. I
+   won't include that final clause in the future.)
+
+And here is a graphical picture of what it means:
+
+
+We'll come back to $\Delta_0$ rules, but here's the $\Delta_2$
+saturation rule:
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} with weight
+   $w_r$, a transition \trans{p}{\gamma}{n} with weight $w_t$, and a
+   transition \trans{p'}{\gamma'}{q_{p',\gamma'}} with weight
+   $w_{t'}$, then update $w_{t'}$ following $w_{t'}' = w_{t'} \meet
+   (w_r \extend w_t)$. Finally, add the transition
+   \trans{q_{p',\gamma'}}{\gamma''}{n} with weight $\lambda x.x$ if it
+   does not already exist.
+
+Note that the transition outgoing from the state $q_{p',\gamma'}$ will
+\emph{always} be $\lambda x. x$, as we only ever modify the weight of
+transitions out of an initial state. (Though without seeing the
+$\Delta_0$ saturation rule you won't know that for sure, of course.)
+
+Here's a diagram:
+
+
+Finally we have the rule for $\Delta_0$. We are going to weave
+$\epsilon$ closure into this rule, so it is a bit more complicated
+than the other rules we've seen.
+
+The first part of the rule is what you might expect:
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} with weight $w_r$,
+   a transition \trans{p}{\gamma}{n} with weight $w_t$, and a
+   transition \trans{p'}{\epsilon}{n} with weight $w_{t'}$, update the
+   weight on the transition according to $w_{t'}' = w_{t'} \meet (w_r
+   \extend w_t)$.
+
+And now we need to perform $\epsilon$ closure. The unweighted version
+would continue:
+
+   Now for any transition \trans{n}{\sigma}{n'}, add a transition
+   \trans{p'}{\sigma}{n'}.
+
+(Note that $\sigma$ may be $\epsilon$, in which case adding
+\trans{p'}{\sigma}{n'} will also give you more things to do with
+this rule later.)
+
+So what should the weight be on \trans{p'}{\sigma}{n'}? Well, for
+starters, if that transition is already present then it will already
+have a weight $w_{t''}$, so we'll have to meet in that. (Whenever we
+update a weight we always take the meet with the old version.) But
+what's the new information we've discovered?
+
+   Now for any transition \trans{n}{\sigma}{n'} with weight $w_{t''}$,
+   update the weight on the transition \trans{p'}{\sigma}{n'}
+   according to 
+
+
+
+
+
+   If there is a PDS rule
+   \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} with weight $w_r$,
+   a transition \trans{p}{\gamma}{n} with weight $w_t$, and a
+   transition \trans{p'}{\epsilon}{n} with weight $w_{t'}$, ...
+
+
+
+\end{document}
