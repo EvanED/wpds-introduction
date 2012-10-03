@@ -1,9 +1,22 @@
 \documentclass{article}
 
-\newcommand{\code}[1]{\texttt{#1}}
-\newcommand{\config}{2}{\ensuremath{\langle #1, #2 \rangle}}
-\newcommand{\rule}{2}{\ensuremath{#1 \righthookarrow #2}}
-\newcommand{\trans}[3]{\ensuremath{#1 \rightarrow_{#2} #3}}
+\usepackage{verbatim}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+
+\newcommand{\Code}[1]{\texttt{#1}}
+\newcommand{\Config}[2]{\ensuremath{\langle #1, #2 \rangle}}
+\newcommand{\Rule}[2]{\ensuremath{#1 \hookrightarrow #2}}
+\newcommand{\Trans}[3]{\ensuremath{#1 \rightarrow_{#2} #3}}
+
+\newcommand{\powerset}[1]{P(#1)}
+\newcommand{\epspath}[3]{\ensuremath{#1 to #2 via #3}}
+\newcommand{\subsubsubsection}[1]{\textbf{#1}}
+\newcommand{\bbN}{\mathbb{N}}
+\newcommand{\meet}{\sqcap}
+\newcommand{\extend}{\otimes}
+
+\newtheorem{definition}{Definition}
 
 \begin{document}
 
@@ -28,15 +41,15 @@ successors of which other states, but how you actually
 \emph{determine} the successor relation is less relevant.
 
 One other important difference is that Boolean programs are allowed to
-have nondeterministic branches, notated as \code{if(*)}. In terms of
+have nondeterministic branches, notated as \Code{if(*)}. In terms of
 reachability, both branches of such a branch are reachable; this means
 that if you are trying to determine whether an error point is
 reachable, it can be located in either branch (or rely on variable
 settings from either branch). The same can apply to loops.
 
-Boolean programs can also have an \code{assert} statement, which marks
+Boolean programs can also have an \Code{assert} statement, which marks
 an error line. Assertions don't have attached conditions, but such
-conditions can of course be simulated as \code{if(...) assert;}.
+conditions can of course be simulated as \Code{if(...) assert;}.
 
 The initial valuation of globals is undefined, as are the initial
 values of non-parameter locals when a procedure is called. The program
@@ -57,17 +70,17 @@ abstract than the actual CPU's instruction pointer.)
 | addresses we store in the stack are offset from what is
 | typical. Usually the current address is stored in a register, which
 | is sort of a global location; our semantics will store the current
-| address in the current stack frame. Furthermore, if \code{foo()}
-| calls \code{bar()}, then the address in \code{foo()} that execution
-| should return to when \code{bar()} returns will be stored in
-| \code{bar()}'s activation record -- our semantics will store that
-| address in \code{foo()}'s activation record.
+| address in the current stack frame. Furthermore, if \Code{foo()}
+| calls \Code{bar()}, then the address in \Code{foo()} that execution
+| should return to when \Code{bar()} returns will be stored in
+| \Code{bar()}'s activation record -- our semantics will store that
+| address in \Code{foo()}'s activation record.
 
 Consider the following example, program 1:
 [TODO: insert]
 
 We will write a configuration as follows:
-\config{g=T}{\frame{1}{h=T}}; this is a possible starting
+\Config{g=T}{\frame{1}{h=T}}; this is a possible starting
 configuration of program 1. The first element in the outer tuple is
 the global state, and the second element is the stack. The stack is
 written as a sequence of pairs, the first element of which is the
@@ -79,12 +92,14 @@ give first.
 Here is another configuration that arises later in the execution of
 program 1, starting with g=T and h=T:
 
+\begin{verbatim}
                  AR of f (top of stk)  AR of main
                  -------------------   ------------
-   \config{g=T}{\frame{7}{a1=T, a2=F} \frame{3}{h=T}}
+   \Config{g=T}{\frame{7}{a1=T, a2=F} \frame{3}{h=T}}
            ^           ^         ^           ^
         val of     next line    val of      next line to exec
         global     to exec.     locals      after f() returns
+\end{verbatim}
 
 
 If the program can start in state $s_1$, execute the statement named
@@ -122,7 +137,7 @@ can not terminate (column 1), can terminate execution in an error
 
 Our goal will be to determine whether it is possible for a Boolean
 program to reach an assertion. With the example program, it is, but if
-if \code{h} and \code{g} were initialized to have the same value, it
+if \Code{h} and \Code{g} were initialized to have the same value, it
 would not be possible. (Detecting nontermination is a harder problem,
 which we will not address.)
 
@@ -133,8 +148,8 @@ First of all, Boolean programs can act as a relatively simple
 abstraction of a program that you wish to analyze. Variables in the
 Boolean program need not correspond exactly to variables in the
 original program; instead, they can represent \emph{predicates}. For
-instance, a Boolean variable \code{b} could represent the predicate
-\code{x==y} (where \code{x} and \code{y} are variables in the original
+instance, a Boolean variable \Code{b} could represent the predicate
+\Code{x==y} (where \Code{x} and \Code{y} are variables in the original
 program).
 
 However, the real benefit comes when combining a tool that analyzes
@@ -206,22 +221,25 @@ $\rightarrow$ is any state transition that respects the semantics of
 the program $B$.
 
 --------------------------
+
 An example of another transition system is defined by the
-\lambda\ calculus. States in this transition system correspond to
-terms in the \lambda\ calculus in De Bruijn form, and the transition
+$\lambda$ calculus. States in this transition system correspond to
+terms in the $\lambda$ calculus in De Bruijn form, and the transition
 relation sets $s \rightarrow t$ exactly when $t$ can be obtained from
-$s$ via a \beta\ reduction. (We use De Bruijn form so we can ignore
-\alpha\ renamings, which don't change the ``meaning'' of a
-\lambda\ term. Of course, using ``normal'' \lambda\ notation and
-including \alpha\ renamings in the transition relation, and/or
-including \eta\ reductions, would also result in a perfectly valid
+$s$ via a $\beta$ reduction. (We use De Bruijn form so we can ignore
+$\alpha$ renamings, which don't change the ``meaning'' of a
+$\lambda$ term. Of course, using ``normal'' $\lambda$ notation and
+including $\alpha$ renamings in the transition relation, and/or
+including $\eta$ reductions, would also result in a perfectly valid
 transition system.)
 
 The following diagram shows some portions of this transition system,
 written in normal notation instead of De Bruijn for clarity:
 
+\begin{verbatim}
   [ diagram of reductions of something diverging then converging
     and terminating, then (\x.xx)(\x.xx), then (\x.xxx)(\x.xxx) ]
+\end{verbatim}
 
 Starting from any term in this transition system can result in (1)
 eventually reaching a normal form, (2) reaching a loop in the
@@ -247,7 +265,7 @@ configuration, a halting state is reachable.)
 
 A pushdown system is a way of describing a transition system where:
 \begin{enumerate}
-\item Every state can be written \config{p}{s} where $p$ is a
+\item Every state can be written \Config{p}{s} where $p$ is a
   ``control location'' drawn from a finite set $P$ and $s$ is a stack
   of items drawn from a finite set $\Gamma$. (The name ``control
   location'' is misleading here for our purposes: when modeling a
@@ -268,20 +286,20 @@ input.
 
 The two above restrictions means that we can define a PDS as follows:
 
-\begin{defintion} A pushdown system (PDS) $\script{P}$ is a triple $(P, \Gamma,
+\begin{definition} A pushdown system (PDS) $\mathcal{P}$ is a triple $(P, \Gamma,
   \Delta)$ where $P$ is a finite set (the ``control locations''),
   $\Gamma$ is also a finite set (the ``stack alphabet''), and $\Delta$
   is a set of rules of the form
-  \rule{\config{p}{\gamma}}{\config{q}{w}} where $p, q \in P$, $\gamma
+  \Rule{\Config{p}{\gamma}}{\Config{q}{w}} where $p, q \in P$, $\gamma
   \in \Gamma$, and $w \in \Gamma^*$.
 \end{definition}
 
 A PDS defines a transition system in the following way. The set of
 states in the transition system is the set of all configurations
-\config{p}{w} for $p \in P$ and $w \in \Gamma^*$. The transition
-relation is defined as follows: $\config{p}{\gamma\alpha} \rightarrow
-\config{q}{w\alpha}$ (with $\gamma \in \Gamma$ and $\alpha \in
-\Gamma^*$) if and only if $\rule{\config{p}{\gamma}}{\config{q}{w}}$
+\Config{p}{w} for $p \in P$ and $w \in \Gamma^*$. The transition
+relation is defined as follows: $\Config{p}{\gamma\alpha} \rightarrow
+\Config{q}{w\alpha}$ (with $\gamma \in \Gamma$ and $\alpha \in
+\Gamma^*$) if and only if $\Rule{\Config{p}{\gamma}}{\Config{q}{w}}$
 is a rule in the PDS.
 
 Finally, to simplify the post* and pre* algorithms (presented later),
@@ -291,11 +309,11 @@ not a fundamental restriction: it is possible to simulate any PDS
 without this restriction by one with it, simply by adding new
 intermediate states.) Rules then either one of the following forms:
 \begin{itemize}
-\item \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} (which is called a
+\item \Rule{\Config{p}{\gamma}}{\Config{p'}{\epsilon}} (which is called a
 $\Delta_0$ rule)
-\item \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} (a $\Delta_1$
+\item \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'}} (a $\Delta_1$
   rule)
-\item \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} (a
+\item \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'\gamma''}} (a
   $\Delta_2$ rule)
 \end{itemize}
 
@@ -306,13 +324,13 @@ both cases, we ask what is reachable from a starting set of
 configurations $C$, and the answer will be the set of reachable (or
 reaching) configurations. The definitions are as follows:
 \begin{itemize}
-\item $post^*_{\script{P}}(C) = \{p' | \exists p\in C. p \rightarrow^*
+\item $post^*_{\mathcal{P}}(C) = \{p' | \exists p\in C. p \rightarrow^*
   p'\}$
-\item $pre^*_{\script{P}}(C) = \{p | \exists p'\in C. p \rightarrow^*
+\item $pre^*_{\mathcal{P}}(C) = \{p | \exists p'\in C. p \rightarrow^*
   p'\}$
 \end{itemize}
 In both cases, $\rightarrow^*$ is the reflexive transitive closure of
-the transition relation defined by the PDS $\script{P}$. I'll also
+the transition relation defined by the PDS $\mathcal{P}$. I'll also
 abuse notation and use $post^*(p)$ to mean $post^*(\{p\})$, and
 similarly for pre*.
 
@@ -334,18 +352,18 @@ sets in such a way that we can still compute pre* and post*.
 
 In order to represent a set of configurations symbolically (and
 finitely), we will use a slightly-modified form of finite
-automaton. For a PDS $\script{P}$, we will define a
-$\script{P}$-automaton as $(Q, \delta, F)$. (I'll usually drop the
-$\script{P}$ suffix and just refer to it as an automaton or
+automaton. For a PDS $\mathcal{P}$, we will define a
+$\mathcal{P}$-automaton as $(Q, \delta, F)$. (I'll usually drop the
+$\mathcal{P}$ suffix and just refer to it as an automaton or
 configuration automaton.) $Q$ is a set of states, and must be a
 superset of $P$ (the PDS's set of states); $\delta: Q \times
 \Gamma_\epsilon \rightarrow \powerset{Q}$ is the transition function;
 $F$ is the set of accepting states. The automaton's alphabet (normally
 $\Sigma$) is the same as the PDS's stack alphabet $\Gamma$, plus
-\epsilon.
+$\epsilon$.
 
-A configuration automaton $\script{A}$ accepts a configuration
-\config{p}{w} if $\script{A}$ starts in its state $p$, follows
+A configuration automaton $\mathcal{A}$ accepts a configuration
+\Config{p}{w} if $\mathcal{A}$ starts in its state $p$, follows
 transitions according to the next unread symbol in $w$ (starting from
 the top of the stack), and can end in an accepting state $f \in
 F$. (This is just like the standard definition of acceptance in an FA
@@ -354,14 +372,14 @@ one fixed start state $q_0$, and the symbols it reads are from the
 configuration's stack, top-to-bottom.)
 
 For instance, the following atuomaton accepts the configuration
-\config{p}{abc}:
+\Config{p}{abc}:
 
 
 
-$\script{P}$-automata can, of course, represent either finite or
-infinite sets of configurations of $\script{P}$. However, not every
+$\mathcal{P}$-automata can, of course, represent either finite or
+infinite sets of configurations of $\mathcal{P}$. However, not every
 infinite set of configurations can be reprsented by a
-$\script{P}$-automaton, just like not every infinite set of normal
+$\mathcal{P}$-automaton, just like not every infinite set of normal
 strings can be represented by a standard finite automaton. If a set of
 configurations \emph{can} be represented, then we say that class is
 ``regular''.
@@ -399,33 +417,33 @@ The squiggly bit on the right represents possibly a bunch of states
 and transitions, but it could also be none at all. (In the extreme
 case, the node labeled $n$ could be the same as $p$ in which case the
 $\gamma$ transition is a self loop, and $p$ could be accepting.) Call
-$L(n)$ be the set of strings accepted by $\script{A}$ starting from
+$L(n)$ be the set of strings accepted by $\mathcal{A}$ starting from
 state $n$.
 
 What does this mean? This means that a configuration is accepted by
-this machine if it takes the form \config{p}{\gamma\alpha}, where
+this machine if it takes the form \Config{p}{\gamma\alpha}, where
 $\alpha$ some string in $L(n)$.
 
 Now consider the PDS rule
-\rule{\config{p}{\gamma}}{\config{p'}{\gamma'}}. This rule means that,
-in the transition system defined by $\script{P}$, a successor of
-\config{p}{\gamma\alpha} is \config{p'}{\gamma'\alpha}. This means
-that \config{p'}{\gamma'\alpha} must be accepted by the post*
+\Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'}}. This rule means that,
+in the transition system defined by $\mathcal{P}$, a successor of
+\Config{p}{\gamma\alpha} is \Config{p'}{\gamma'\alpha}. This means
+that \Config{p'}{\gamma'\alpha} must be accepted by the post*
 automaton.
 
 What can we do to make this happen?
 
 The answer is remarkably simple: we just add a transition
-$\trans{p'}{\gamma}{n}$.
+$\Trans{p'}{\gamma}{n}$.
 
 In other words, we have our first saturation rule (we will have to
 revise these rules later however, because of the presence of
 $\epsilon$ transitions):
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} and a transition
-   \trans{p}{\gamma}{n}, add a new transition
-   \trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'}} and a transition
+   \Trans{p}{\gamma}{n}, add a new transition
+   \Trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
 
 OK. So now what should we do about $\Delta_0$ and $\Delta_2$ rules?
 Before we go further, you might want to try to predict the saturation
@@ -435,28 +453,28 @@ Let's look at $\Delta_0$ first. This is actually very similar to the
 $\Delta_1$ case we just did:
 
 Consider the PDS rule
-\rule{\config{p}{\gamma}}{\config{p'}{\epsilon}}. This rule means that,
-in the transition system defined by $\script{P}$, a successor of
-\config{p}{\gamma\alpha} is \config{p'}{\alpha}, and the latter
+\Rule{\Config{p}{\gamma}}{\Config{p'}{\epsilon}}. This rule means that,
+in the transition system defined by $\mathcal{P}$, a successor of
+\Config{p}{\gamma\alpha} is \Config{p'}{\alpha}, and the latter
 configuration must be accepted by the post* automaton.
 
 To make this happen, we just add a transition like last time except
 this time we make in an $\epsilon$ transition:
-$\trans{p'}{\gamma}{n}$.
+$\Trans{p'}{\gamma}{n}$.
 
 Formally, we have the following rule:
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} and a transition
-   \trans{p}{\gamma}{n}, add a new transition
-   \trans{p'}{\epsilon}{n}.
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\epsilon}} and a transition
+   \Trans{p}{\gamma}{n}, add a new transition
+   \Trans{p'}{\epsilon}{n}.
 
 Finally, consider the $\Delta_2$ rule
-\rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}}. This rule
-means that, in the transition system defined by $\script{P}$, a
-successor of \config{p}{\gamma\alpha} is
-\config{p'}{\gamma'\gamma''\alpha}. This means that
-\config{p'}{\gamma'\gamma''\alpha} must be accepted by the post*
+\Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'\gamma''}}. This rule
+means that, in the transition system defined by $\mathcal{P}$, a
+successor of \Config{p}{\gamma\alpha} is
+\Config{p'}{\gamma'\gamma''\alpha}. This means that
+\Config{p'}{\gamma'\gamma''\alpha} must be accepted by the post*
 automaton.
 
 This one is a bit more complicated, because we have to add \emph{two}
@@ -469,10 +487,10 @@ Thus the automaton picture looks as follows:
 And we have the saturation rule
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} and a
-   transition \trans{p}{\gamma}{n}, add new transitions
-   \trans{p'}{\gamma'}{q_{p',\gamma'}} and
-   \trans{q_{p',\gamma'}}{\gamma''}{n}, adding the state $q_{p',\gamma'}$
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'\gamma''}} and a
+   transition \Trans{p}{\gamma}{n}, add new transitions
+   \Trans{p'}{\gamma'}{q_{p',\gamma'}} and
+   \Trans{q_{p',\gamma'}}{\gamma''}{n}, adding the state $q_{p',\gamma'}$
    if necessary.
 
 
@@ -487,69 +505,69 @@ the following rules:
    p C -> p D
 
 By applying each of these rules in order, we see that the
-configuration \config{p}{D} is in $post*(\config{p}{A})$.
+configuration \Config{p}{D} is in $post*(\Config{p}{A})$.
 
 However, let's apply the saturation rules exactly as given above,
 starting from an automaton that accepts just the configuration
-\config{p}{A}. (You may want to try this yourself before reading on!)
+\Config{p}{A}. (You may want to try this yourself before reading on!)
 
 We start with
 
 then apply the $\Delta_2$ saturation rule because we have a PDS rule
-\rule{\config{p}{A}}{\rule{p}{B C}} and a transition \trans{p}{A}{f},
+\Rule{\Config{p}{A}}{\Rule{p}{B C}} and a transition \Trans{p}{A}{f},
 and get this:
 
 then we apply the $\Delta_0$ saturation rule because we have a PDS
-rule \rule{\config{p}{B}}{\config{p}{\epsilon}} and a transition
-\trans{p}{B}{q_{p,B}}, and arrive at:
+rule \Rule{\Config{p}{B}}{\Config{p}{\epsilon}} and a transition
+\Trans{p}{B}{q_{p,B}}, and arrive at:
 
 You might hope that we can now apply the $\Delta_1$ transition rule
-with the PDS rule \rule{\config{p}{C}}{\config{p}{D}}, but as written
+with the PDS rule \Rule{\Config{p}{C}}{\Config{p}{D}}, but as written
 it does not apply: there is no transition starting at $p$ with symbol
 $C$.
 
 Of course, the problem is that there's a \emph{path} that starts at
-$p$ and begins by reading $C$, but that path starts with an \epsilon
+$p$ and begins by reading $C$, but that path starts with an $\epsilon$
 transition.
 
-(Note: a similar situation can arise with the \epsilon transition on
+(Note: a similar situation can arise with the $\epsilon$ transition on
 the ``other side'' of the transition we're interested in, but only if
 the initial query automaton has certain structures.)
 
 We can handle this situation in two ways. The first is we modify our
 three saturation rules so that they look for \emph{paths} rather than
 just single transitions. If we use the notation \epspath{p}{\gamma}{n}
-to mean a path with (optionally) some \epsilon transitions, then a
-$\gamma$ transition, then (optionally) some more \epsilon transitions,
+to mean a path with (optionally) some $\epsilon$ transitions, then a
+$\gamma$ transition, then (optionally) some more $\epsilon$ transitions,
 then our revised rules are:
 
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} and a path
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'}} and a path
    \epspath{p}{\gamma}{n}, add a new transition
-   \trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
+   \Trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} and a path
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\epsilon}} and a path
    \epspath{p}{\gamma}{n}, add a new transition
-   \trans{p'}{\epsilon}{n}.
+   \Trans{p'}{\epsilon}{n}.
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} and a path
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'\gamma''}} and a path
    \epspath{p}{\gamma}{n}, add new transitions
-   \trans{p'}{\gamma'}{q_{p',\gamma'}} and
-   \trans{q_{p',\gamma'}}{\gamma''}{n}, adding the state
+   \Trans{p'}{\gamma'}{q_{p',\gamma'}} and
+   \Trans{q_{p',\gamma'}}{\gamma''}{n}, adding the state
    $q_{p',\gamma'}$ if necessary.
 
 
-The other option is to perform on-the-fly \epsilon closure. We'll
-leave the \epsilon transitions in-place, but just ensure that we'll
+The other option is to perform on-the-fly $\epsilon$ closure. We'll
+leave the $\epsilon$ transitions in-place, but just ensure that we'll
 never need to use them. To do this, we add one more rule:
 
-    If there is a transition \trans{q}{\epsilon}{q'} and
-    \trans{q'}{\sigma}{q''} (where $\sigma$ can either be a stack
+    If there is a transition \Trans{q}{\epsilon}{q'} and
+    \Trans{q'}{\sigma}{q''} (where $\sigma$ can either be a stack
     symbol in $\Gamma$ or $\epsilon$), add the transition
-    \trans{q}{\sigma}{q''}.
+    \Trans{q}{\sigma}{q''}.
 
 
 \subsubsection{The extra state in $\Delta_2$ rules.}
@@ -564,24 +582,24 @@ the states that we do, and (3) why don't we combine more.
 
 Consider the PDS with the following rule:
 
-  \rule{\config{p}{a}}{\config{p}{ab}}
+  \Rule{\Config{p}{a}}{\Config{p}{ab}}
 
-Starting from the configuration $c = \config{p}{a}$, it is hopefully
+Starting from the configuration $c = \Config{p}{a}$, it is hopefully
 clear that $post*(\{c\})$ should be the set of configurations of the
-form \config{p}{ab*}. (That is, the stack top is $a$ and under it is
+form \Config{p}{ab*}. (That is, the stack top is $a$ and under it is
 any number of $b$s.
 
 Let's see what happens if we use a different $\Delta_2$ saturation
 rule -- one that at first glance seems like it could be reasonable,
 and you might have thought of -- so that it will \emph{always} add a
 new state. For simplicity's sake, I'll use the version that ignores
-\epsilon transitions, but of course we still need to handle that
+$\epsilon$ transitions, but of course we still need to handle that
 somehow. Stated formally:
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} and a
-   transition \trans{p}{\gamma}{n}, add a fresh state $q$ then add
-   transitions \trans{p'}{\gamma'}{q} and \trans{q}{\gamma''}{n}.
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'\gamma''}} and a
+   transition \Trans{p}{\gamma}{n}, add a fresh state $q$ then add
+   transitions \Trans{p'}{\gamma'}{q} and \Trans{q}{\gamma''}{n}.
 
 Runnng post* with this rule gives the following. We start with the
 query automaton that represents $\{c\}$:
@@ -613,7 +631,7 @@ we apply the correct $\Delta_2$ saturation rule:
 
 Take the same PDS as before, but add a rule to it:
 
-    \rule{\config{p}{a}}{\config{p}{b}}
+    \Rule{\Config{p}{a}}{\Config{p}{b}}
 
 and then take our partially-done expanded post* automaton:
 
@@ -652,22 +670,22 @@ automaton that expresses the set of configurations \emph{from} which a
 configuration in the original query automaton is reachable. The
 presentation below (in accordance with the literature) will present
 just one saturation rule for any PDS rule
-\rule{\config{p}{\gamma}}{\config{p}{w}} ($w \in \Gamma^*$), but you
+\Rule{\Config{p}{\gamma}}{\Config{p}{w}} ($w \in \Gamma^*$), but you
 can either do that or just give separate saturation rules for $\Delta_0$,
 $\Delta_1$, and $\Delta_2$ PDS rules as we did for post*.
 
 Let's think through what we want in a similar way as before. Suppose
-that we have a configuration $c = \config{p}{w}$ that is
+that we have a configuration $c = \Config{p}{w}$ that is
 represented by our current automaton. We want to add some
 backwards-reachable configurations. Well, how did we get to $c$? If we
-have a rule \rule{\config{p'}{\gamma}}{\config{p}{w'}} where $w'$ is a
+have a rule \Rule{\Config{p'}{\gamma}}{\Config{p}{w'}} where $w'$ is a
 prefix of $w$ (let $w = w'w''$), that gives us one possible way: we
-start in the configuration \config{p'}{\gamma w''}, apply that rule,
-then arrive in $\config{p'}{w'w''} = c$.
+start in the configuration \Config{p'}{\gamma w''}, apply that rule,
+then arrive in $\Config{p'}{w'w''} = c$.
 
 How does this look in the automaton world? If $c$ is accepted by the
 current automaton, then there's a series of transitions out of $p$
-labeled with each symbol in $w'w''$. To accept \config{p'}{\gamma
+labeled with each symbol in $w'w''$. To accept \Config{p'}{\gamma
   w''}, we just need to add a $\gamma$ transition from $p'$ to the
 point at which we've skipped over $w'$. Graphically:
 
@@ -706,11 +724,11 @@ in our setting, they will represent abstract transformers.
 
 Consider some typical dataflow analysis. There's some domain $D$ of
 possible dataflow facts (e.g. $\powerset(vars \times
-\bbN_\bottom^\top)$ for constant propagation and a ``meet'' ($\meet$)
+\bbN_\bot^\top)$ for constant propagation and a ``meet'' ($\meet$)
 that is used to combine dataflow facts when paths in the program
-converge. (We are using a dataflow-analysis viewpoint: $\bottom$
+converge. (We are using a dataflow-analysis viewpoint: $\bot$
 represents ``anything is possible'' and $\meet$ moves us closer to
-$\bottom$.) When propagating information ``through'' a basic block
+$\bot$.) When propagating information ``through'' a basic block
 $b$, you use some transformer $\tau_b: D \rightarrow D$ to translate
 the dataflow fact before the block to the one after the block, or vice
 versa (depending on whether you're doing a forwards or backwards
@@ -719,7 +737,7 @@ solution from the program's start to its finish.
 
 (If you're familiar with ``meet over all paths'' but not ``valid
 paths'', a ``valid path'' is one where control does not use some call
-site $c$ to call a function \code{foo} but then return to a different
+site $c$ to call a function \Code{foo} but then return to a different
 call site. This is what gives us context sensitivity.)
 
 When doing dataflow analysis with a WPDS, we actually treat the set of
@@ -774,7 +792,7 @@ of configurations instead of just a single start node, or end in any
 regular set of configurations. For instance, we could ask about
 configurations where we specify not just a program point but also a
 set of possible stacks: perhaps we are only interested in a point $p$
-if \code{foo} is somewhere on the stack.  Such \emph{stack-qualified
+if \Code{foo} is somewhere on the stack.  Such \emph{stack-qualified
   queries} are a strict increase in power of WPDSs relative to other
 methods for context-sensitive analysis, such as Shriri-Pnuelli's
 framework (with their $\Phi$ functions).
@@ -800,7 +818,7 @@ between pre* and post*.
 For pre*, the interpretation is still pretty simple. In the unweighted
 case, a path from an initial state $p$ to an accepting state with
 $\gamma_1\gamma_2\dots\gamma_n$ as the edge symbols indicates that the
-configuration $c = \config{p}{\gamma_1\gamma_2\dots\gamma_n}$ is
+configuration $c = \Config{p}{\gamma_1\gamma_2\dots\gamma_n}$ is
 contained within the set in question. In the weighted case, it
 indicates that $c$ is accepted \emph{with weight} $w_1 \extend w_2
 \extend \dots \extend w_n$, where $w_i$ is the weight on the
@@ -908,13 +926,13 @@ automaton that are not actually reachable from the initial state. For
 instance, if we run pre* on the example from section blah (from the
 program's exit state with no stack), we get the following automaton:
 
-This automaton accepts configurations like \config{p}{foo_3 main_3}
+This automaton accepts configurations like \Config{p}{foo_3 main_3}
 where $main_3$ isn't a call site!
 
 This configuration doesn't make sense as far as the program's
 semantics are concerned, but the WPDS's transition system doesn't know
 that. As far as the transition system is concerned, if it starts in
-the configuration \config{p}{foo_3 main_3}, then it can get to the
+the configuration \Config{p}{foo_3 main_3}, then it can get to the
 final state -- and indeed this is the case. 
 
 So what we want to do is simple conceptually. We will run an
@@ -938,6 +956,7 @@ in the resulting automaton by ???.) We then examine *this* automaton.
   paths matters, because we want to exclude them.
 
 So here is the process of carring out a backwards dataflow problem:
+\begin{verbatim}
     - C_end = query automaton for exit configuration(s)
     - a_pre = pre(C_end)
     - C_start = query automaton for starting configuration(s)
@@ -951,7 +970,7 @@ So here is the process of carring out a backwards dataflow problem:
                 remembering we are extending ``forward'')
               - $w_{all} = w_{all} \meet w$
           - Label $n$ with $w_{all}$
-
+\end{verbatim}
 
 \subsection{Weighted post*}
 
@@ -970,14 +989,14 @@ will change any weight.
 So let's look at the $\Delta_1$ case. The unweighted rule was
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} and a transition
-   \trans{p}{\gamma}{n}, add a new transition
-   \trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'}} and a transition
+   \Trans{p}{\gamma}{n}, add a new transition
+   \Trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
 
 Let's look at what it means in the weighted case. Suppose that the
 weight of the PDS rule is $w_r$, the weight of the transition
-\trans{p}{\gamma}{n} is $w_t$, and the weight of the transition
-\trans{p'}{\gamma'}{n} is currently $w$. If the latter transition does
+\Trans{p}{\gamma}{n} is $w_t$, and the weight of the transition
+\Trans{p'}{\gamma'}{n} is currently $w$. If the latter transition does
 not yet exist, then we'll set $w = \top$. (Remember, $\top \meet x =
 x$. It essentially reflects an impossible weight.) Conceptually, you
 can think of \emph{every} transition being initially present in the
@@ -994,11 +1013,11 @@ path with $\pi$'s labels.)
 // start eding here invalid markup
 This means that it is possible to start in the transition system from some
   configuration in the query set and arrive at the configuration
-  \config{p}{\gamma \pi} while the MOAVP weight is $w_t \extend
+  \Config{p}{\gamma \pi} while the MOAVP weight is $w_t \extend
   w_\pi$.\footnotemark
-\item If we Similarly, the MOAVPs solution from the query set to
-  \config{p'}{\gamma'\pi} is $w_r \extend w_t \extend w_\pi$}
-\end{itemize}
+If we Similarly, the MOAVPs solution from the query set to
+  \Config{p'}{\gamma'\pi} is $w_r \extend w_t \extend w_\pi$
+
 
 \footnotetext{Really it's the meet of all MOAVPs solutions from
   anything in the query set: ....}
@@ -1007,16 +1026,16 @@ Here's a diagram of the transition system and the WFA:
 
 If we suppose that this is the first time we're looking at this
 $\Delta_1$ rule, there are at least two sets of possibilities for how
-to get to the configuration \config{p'}{\gamma'\pi}. Because
+to get to the configuration \Config{p'}{\gamma'\pi}. Because
 $\gamma'\pi$ was already accepted, whatever paths we found before is
 one such set. The second way is what we just discovered: use one of
-the ways to get to the configuration \config{p}{\gamma \pi}, then the
+the ways to get to the configuration \Config{p}{\gamma \pi}, then the
 PDS $\Delta_1$ rule we are looking at. Here is a picture:
 
 We want the MOAVPs solution, so we need to take the meet of all of
 these paths. The weight of the first set of paths is $w_{t'} \extend
 w_\pi$.\footnotemark The weight of the second set of paths is $w_t
-\extend w_\pi$ to get to \config{p}{\gamma \pi} then the weiht of the
+\extend w_\pi$ to get to \Config{p}{\gamma \pi} then the weiht of the
 rule, giving $w_r \extend w_t \extend w_\pi$.
 
 \footnotetext{Here and in the next moment we are using a fact which I
@@ -1024,8 +1043,8 @@ rule, giving $w_r \extend w_t \extend w_\pi$.
   \extend b) \meet (a \extend c)$. This doesn't necessarily always
   hold -- but it must for WPDSs to work.}
 
-This means that the new weight for \config{p'}{\gamma' \pi} should be
-$(w_{t'} \extend w_\pi) \meet (w_r \extend \w_t \extend w_\pi)$ which
+This means that the new weight for \Config{p'}{\gamma' \pi} should be
+$(w_{t'} \extend w_\pi) \meet (w_r \extend w_t \extend w_\pi)$ which
 equals $(w_{t'} \meet (w_r \extend w_t)) \extend w_\pi$.
 
 Note that we can achieve this (at least for this path) by updating
@@ -1037,11 +1056,11 @@ work out for each of them.
 This gives our saturation rule:
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'}} with weight $w_r$,
-   a transition \trans{p}{\gamma}{n} with weight $w_t$, and a
-   transition \trans{p'}{\gamma'}{n} with weight $w_{t'}$, update the
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'}} with weight $w_r$,
+   a transition \Trans{p}{\gamma}{n} with weight $w_t$, and a
+   transition \Trans{p'}{\gamma'}{n} with weight $w_{t'}$, update the
    weight on the transition according to $w_{t'}' = w_{t'} \meet (w_r
-   \extend w_t)$. If \trans{p'}{\gamma'}{n} is not present, add it
+   \extend w_t)$. If \Trans{p'}{\gamma'}{n} is not present, add it
    with weight $w_t \extend w_r$.
 
 (Note that the case where it was not present will result in the same
@@ -1055,12 +1074,12 @@ We'll come back to $\Delta_0$ rules, but here's the $\Delta_2$
 saturation rule:
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\gamma'\gamma''}} with weight
-   $w_r$, a transition \trans{p}{\gamma}{n} with weight $w_t$, and a
-   transition \trans{p'}{\gamma'}{q_{p',\gamma'}} with weight
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'\gamma''}} with weight
+   $w_r$, a transition \Trans{p}{\gamma}{n} with weight $w_t$, and a
+   transition \Trans{p'}{\gamma'}{q_{p',\gamma'}} with weight
    $w_{t'}$, then update $w_{t'}$ following $w_{t'}' = w_{t'} \meet
    (w_r \extend w_t)$. Finally, add the transition
-   \trans{q_{p',\gamma'}}{\gamma''}{n} with weight $\lambda x.x$ if it
+   \Trans{q_{p',\gamma'}}{\gamma''}{n} with weight $\lambda x.x$ if it
    does not already exist.
 
 Note that the transition outgoing from the state $q_{p',\gamma'}$ will
@@ -1078,30 +1097,30 @@ than the other rules we've seen.
 The first part of the rule is what you might expect:
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} with weight $w_r$,
-   a transition \trans{p}{\gamma}{n} with weight $w_t$, and a
-   transition \trans{p'}{\epsilon}{n} with weight $w_{t'}$, update the
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\epsilon}} with weight $w_r$,
+   a transition \Trans{p}{\gamma}{n} with weight $w_t$, and a
+   transition \Trans{p'}{\epsilon}{n} with weight $w_{t'}$, update the
    weight on the transition according to $w_{t'}' = w_{t'} \meet (w_r
    \extend w_t)$.
 
 And now we need to perform $\epsilon$ closure. The unweighted version
 would continue:
 
-   Now for any transition \trans{n}{\sigma}{n'}, add a transition
-   \trans{p'}{\sigma}{n'}.
+   Now for any transition \Trans{n}{\sigma}{n'}, add a transition
+   \Trans{p'}{\sigma}{n'}.
 
 (Note that $\sigma$ may be $\epsilon$, in which case adding
-\trans{p'}{\sigma}{n'} will also give you more things to do with
+\Trans{p'}{\sigma}{n'} will also give you more things to do with
 this rule later.)
 
-So what should the weight be on \trans{p'}{\sigma}{n'}? Well, for
+So what should the weight be on \Trans{p'}{\sigma}{n'}? Well, for
 starters, if that transition is already present then it will already
 have a weight $w_{t''}$, so we'll have to meet in that. (Whenever we
 update a weight we always take the meet with the old version.) But
 what's the new information we've discovered?
 
-   Now for any transition \trans{n}{\sigma}{n'} with weight $w_{t''}$,
-   update the weight on the transition \trans{p'}{\sigma}{n'}
+   Now for any transition \Trans{n}{\sigma}{n'} with weight $w_{t''}$,
+   update the weight on the transition \Trans{p'}{\sigma}{n'}
    according to 
 
 
@@ -1109,9 +1128,9 @@ what's the new information we've discovered?
 
 
    If there is a PDS rule
-   \rule{\config{p}{\gamma}}{\config{p'}{\epsilon}} with weight $w_r$,
-   a transition \trans{p}{\gamma}{n} with weight $w_t$, and a
-   transition \trans{p'}{\epsilon}{n} with weight $w_{t'}$, ...
+   \Rule{\Config{p}{\gamma}}{\Config{p'}{\epsilon}} with weight $w_r$,
+   a transition \Trans{p}{\gamma}{n} with weight $w_t$, and a
+   transition \Trans{p'}{\epsilon}{n} with weight $w_{t'}$, ...
 
 
 
