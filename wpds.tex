@@ -15,8 +15,17 @@
 \newcommand{\bbN}{\mathbb{N}}
 \newcommand{\meet}{\sqcap}
 \newcommand{\extend}{\otimes}
+\newcommand{\combine}{\oplus}
 
 \newtheorem{definition}{Definition}
+\newtheorem{example}{Example}
+
+\newcommand{\poststar}{\ensuremath{\textsc{post}^\textsc{*}}}
+\newcommand{\prestar}{\ensuremath{\textsc{pre}^\textsc{*}}}
+
+\newenvironment{sidebar}{}{}
+
+\newcommand{\strong}[1]{\textbf{#1}}
 
 \begin{document}
 
@@ -25,8 +34,19 @@ in program analysis. We will start with unweighted pushdown systems,
 discussing their applications primarily in terms of verifying Boolean
 programs, then move on to the weighted versions. In order to set the
 stage for describing unweighted PDSs, we start with describing boolean
-programs, and use that as a launching point for discussing trasition
+programs and use that as a launching point for discussing trasition
 systems, which PDSs define.
+
+In program analysis, pushdown systems are all about solving
+\emph{reachability} problems. Unweighted PDSs can be used to answer
+questions such as ``is this particular state reachable from the start
+state?'' (For instance, perhaps you want to determine whether it is
+possible for a program to reach an error state.) Weighted pushdown
+systems are used to answer questions such as ``what is the net effect
+on the program dataflow between the initial state and this particular
+state?'' The latter question, if you tilt your head sideways, can be
+used to answer traditional dataflow questions.
+
 
 \section{Boolean Programs}
 The definition of a Boolean program is very simple: a Boolean program
@@ -36,58 +56,65 @@ We will defer the question of why Boolean programs are useful for a
 moment, and instead concentrate on their semantics. I'm going to leave
 details of how the semantics are specified (e.g. small/large-step
 operational, denotational, etc.) aside. What we're really interested
-in at the moment is the structure of states and which states are
-successors of which other states, but how you actually
-\emph{determine} the successor relation is less relevant.
+in at the moment is the \emph{structure of states} and \emph{which
+  states are successors} of which other states, but how you actually
+determine the successor relation is less relevant.
 
-One other important difference is that Boolean programs are allowed to
-have nondeterministic branches, notated as \Code{if(*)}. In terms of
-reachability, both branches of such a branch are reachable; this means
-that if you are trying to determine whether an error point is
-reachable, it can be located in either branch (or rely on variable
-settings from either branch). The same can apply to loops.
+In addition to the restriction that all variables are of type Bool,
+here are some perhaps-unusual characteristics of Boolean programs:
 
-Boolean programs can also have an \Code{assert} statement, which marks
-an error line. Assertions don't have attached conditions, but such
-conditions can of course be simulated as \Code{if(...) assert;}.
+\begin{itemize}
+  \item 
+    Boolean programs are allowed to have nondeterministic branches,
+    notated as \Code{if(*)}. Both branches of such a branch are
+    \emph{reachable}; this means that if you are trying to determine
+    whether an error point is reachable, it can be located in either
+    branch (or rely on variable settings from either branch). It is
+    possible to use a nondeterministic branch in a loop --
+    \Code{while(*)}.
 
-The initial valuation of globals is undefined, as are the initial
-values of non-parameter locals when a procedure is called. The program
-nondeterministically sets them. (You can think of uninitialized
-variables as one way of a program receiving input.)
+  \item
+    Boolean programs can have an \Code{assert} statement, which marks
+    an error point. Assertions don't have attached conditions, but
+    such conditions can of course be simulated as \Code{if(...)
+      assert;}.
+
+  \item
+    Boolean programs have no heap. (After all, there are no pointers.)
+
+  \item
+    The initial valuation of globals is undefined, as are the initial
+    values of non-parameter locals when a procedure is called. The
+    program nondeterministically sets them. (You can think of
+    uninitialized variables as how a program receives input.)
+\end{itemize}
 
 At any given point, the state of a Boolean program consists of a
 valuation of the local variables along with a stack of activation
 records. Each activation record holds a valuation of the locals of the
-corresponding procedure as well as the address of the next statement
-to be executed. (For us, ``address'' means ``line number''; it's more
-abstract than the actual CPU's instruction pointer.)
+corresponding procedure as well as the line number of the next
+statement to be executed. We will call a state of a Boolean program a
+\emph{configuration}.
 
-| There are similarities and differences between this presentation and
-| what you see with ``normal'' programs. There are two main
-| differences. First, we've dropped the possibility of a heap (with
-| only Boolean values we have no pointers). Second, the statement
-| addresses we store in the stack are offset from what is
-| typical. Usually the current address is stored in a register, which
-| is sort of a global location; our semantics will store the current
-| address in the current stack frame. Furthermore, if \Code{foo()}
-| calls \Code{bar()}, then the address in \Code{foo()} that execution
-| should return to when \Code{bar()} returns will be stored in
-| \Code{bar()}'s activation record -- our semantics will store that
-| address in \Code{foo()}'s activation record.
+Note that the statement addresses we store in the stack are offset
+from what is typical in real programs. Usually the current address is
+stored in a register (a global location) and the stack frame of
+\Code{foo()} stores the return address of its caller. Our semantics
+store the current address in the current stack frame, and the return
+address in the caller's stack frame.
 
 Consider the following example, program 1:
 [TODO: insert]
 
 We will write a configuration as follows:
-\Config{g=T}{\frame{1}{h=T}}; this is a possible starting
-configuration of program 1. The first element in the outer tuple is
+\Config{g=T}{\frame{1}{h=T}}. (This is a possible starting
+configuration of program 1.) The first element in the outer pair is
 the global state, and the second element is the stack. The stack is
 written as a sequence of pairs, the first element of which is the
 statement that is \emph{about to execute} when control returns to that
-procedure (for the topmost element, that is ``now.'') , and the second
+procedure (for the topmost element, that is ``now'') , and the second
 element of which is a valuation of the locals. The top of the stack is
-give first. 
+given first.
 
 Here is another configuration that arises later in the execution of
 program 1, starting with g=T and h=T:
@@ -102,17 +129,18 @@ program 1, starting with g=T and h=T:
 \end{verbatim}
 
 
-If the program can start in state $s_1$, execute the statement named
-by the topmost stack frame in $s_1$, and go to state $s_2$, then we
-will write $s_1 \rightarrow s_2$. Most states will have only one
-successor, but the head of a nondeterministic branch or loop will have
-two, and when calling a procedure with $n$ non-parameter locals, there
-will be $2^n$ possible successors (one for each possible valuation of
-that procedure's locals).
+If the program can start in some state $s_1$, execute the statement
+named by the topmost stack frame in $s_1$, and change to state $s_2$,
+then we will write $s_1 \rightarrow s_2$. Most states will have only
+one successor, but the head of a nondeterministic branch or loop will
+have two, and when calling a procedure with $n$ non-parameter locals,
+there will be $2^n$ possible successors (one for each possible
+valuation of that procedure's locals).
 
 We can picture the possible executions of the example program in the
 following figure:
 
+\begin{verbatim}
   T 0T               T 0F            F 0T          F 0F
   T 1T               T 1F            F 1T          F 1F
   T 5TT 1rT          T 5TF 1rF       F 5FT 1rT     F 5FF 1rF
@@ -128,61 +156,78 @@ following figure:
                      T 2F
                      T 3F
                      assert
+\end{verbatim}
+
 
 
 Any path in this graph corresponds to a possible execution of the
 program. Note that there are three possibile behaviors: the program
-can not terminate (column 1), can terminate execution in an error
+can fail to terminate (column 1), can terminate execution in an error
 (columns 2 and 3), or can complete successfully (column 4).
 
 Our goal will be to determine whether it is possible for a Boolean
 program to reach an assertion. With the example program, it is, but if
-if \Code{h} and \Code{g} were initialized to have the same value, it
-would not be possible. (Detecting nontermination is a harder problem,
-which we will not address.)
+if \Code{h} and \Code{g} were initialized to have the same value
+(columns 1 and 4), it would not be possible. (Detecting nontermination
+is a harder problem, which we will not address.)
 
------------------
-Why are Boolean programs interesting?
+\begin{sidebar}
+\strong{Why are Boolean programs interesting?}
 
-First of all, Boolean programs can act as a relatively simple
-abstraction of a program that you wish to analyze. Variables in the
-Boolean program need not correspond exactly to variables in the
-original program; instead, they can represent \emph{predicates}. For
-instance, a Boolean variable \Code{b} could represent the predicate
-\Code{x==y} (where \Code{x} and \Code{y} are variables in the original
-program).
+Boolean programs can act as a relatively simple abstraction of a
+program that you wish to analyze. What makes this useful is that
+variables in the Boolean program need not correspond exactly to
+variables in the original program; instead, they can represent
+\emph{predicates}.
 
-However, the real benefit comes when combining a tool that analyzes
-Boolean programs into a larger tool that performs somtehing called
-\emph{counterexample-guided abstraction refinement} (CEGAR). The
-overall method can be diagrammed as follows:
+For instance, a Boolean variable \Code{b} could represent the
+predicate \Code{x==y} (where \Code{x} and \Code{y} are variables in
+the original program). The abstraction of an assignment in the
+original program \Code{x:=y} would set \Code{b} to true, \Code{x:=y+1}
+would set \Code{b} to false, and something else like \Code{x:=4}
+(which may or may not leave \Code{x} and \Code{y} equal) would
+nondeterministically set \Code{b} (via \Code{if(*) b:=true; else
+  b:=false;}). 
+
+The real benefit of this approach comes when combining a tool that
+analyzes Boolean programs into a larger tool that performs a technique
+called \emph{counterexample-guided abstraction refinement}
+(CEGAR). The overall method can be diagrammed as follows:
 
 [CEGAR picture]
 
 Basically what happens is the tool takes the original program and
-produces a very coarse abstraction as a Boolean program. It then
-checks that initial abstraction to figure out if there is an error in
-it, using the process we are about to describe. If not, because all
-Boolean program abstractions are sound, the original program is proved
-to be free of that kind of error.
+produces an initial absraction as a Boolean program, which I will call
+the ``model.'' The initial abstraction is very coarse, but it is
+constructed to be \emph{sound} in the verification sense -- that is,
+if an error state is unreachable in the model, it is guaranteed to be
+unreachable in the original program. Whatever process is used to
+generate Boolean programs must guarantee that each of the models it
+produces is sound.
 
-Conversely, suppose that the Boolean program has an error. The path
-through the Boolean program is passed to another tool which looks to
-see whether that path is feasible in the original program or whether
-it is an imprecision introduced by the abstraction. If the path is
-actually feasible, it means we've found a bug in the original program,
-and our analysis tool is complete.
+The CEGAR process then checks that initial abstraction to figure out
+if there is an error in it, using the process we are about to
+describe. If not, the original program is proved to be free of that
+kind of error because the model is sound.
+
+Conversely, suppose that the error state is reachable in the model. In
+this case, the error-reaching path through the Boolean program is
+passed to another tool which looks to see whether that path is
+feasible in the original program or whether it is an imprecision
+introduced by the current abstraction. If the path is actually
+feasible, it means we've found a bug in the original program, and our
+analysis is complete.
 
 The magic of the CEGAR loop happens in the remaining case: there is a
-path to an assertion in the Boolean program abstraction but that path
-is an imprecision and doesn't correspond to something actually
-executable in the original program. In this case, the tool doesn't
-just say ``this path is not feasible'' but returns an explanation of
+path to an assertion in the model but that path is an imprecision and
+doesn't correspond to something actually executable in the original
+program. In this case, the path feasibility check doesn't just say
+``this path is not feasible'' but returns an explanation of
 \emph{why}. That \emph{why} is turned into some additional predicates
 that the Boolean program should track, which will increase the
-precision. The Boolean program abstraction is \emph{refined} by adding
-these prediates as well, and the new abstraction is again checked for
-correctness starting the cycle anew.
+precision. The model is \emph{refined} by adding these prediates as
+well, and the new abstraction is checked for correctness starting the
+cycle anew.
 
 This process (though using different techniques to check the Boolean
 programs) is the foundation of the SLAM tool from Microsoft
@@ -190,29 +235,27 @@ Research. This tool is able to check many properties of Windows device
 drivers, and has since the release of Vista been a part of the
 official Windows Driver Development Kit under the name Static Driver
 Verifier (SDV). Getting a clean bill of health from the SDV is needed
-for the Windows logo. 
+for the Windows logo certification. 
 
 Drivers are an attractive target for verification because they tend to
 be relatively small, tend to not make heavy use of the heap, have many
 well-defined properties to check, and are relatively important
 (because bugs will bring down your whole system). From Microsoft's
 perspective, drivers are an attractive target because if a third-party
-driver blue-screens your system, they get the blame anyway.
-
------------------
+driver blue-screens your system, Microsoft gets the blame anyway.
+\end{sidebar}
 
 
 \section{Transition Systems}
-
 We can formalize the type of structure pictured in Figure 2 as
 something called a \emph{transition system}. The idea of a transition
 system is really quite simple: it's a (possibly-infinite) collection
 of states along with a \emph{transition relation} that describes how
 states are related. Formally, a transition system is a pair $(S,
-\rightarrow)$ where $S$ is some set and $\rightarrow \subseteq S
-\times S$. (We will write $p \rightarrow q$ for $(p, q) \in
-\rightarrow$.) It can be visualized as a possibly-infinite directed
-graph.
+\rightarrow)$ where $S$ is some set and $\rightarrow$ a binary
+relation on $S$: $\rightarrow \subseteq S \times S$. (We will write $p
+\rightarrow q$ for $(p, q) \in \rightarrow$.) It can be visualized as
+a possibly-infinite directed graph.
 
 When modeling a Boolean program $B$, we will treat the semantics of
 the program as a transition system where the states $S$ are the set of
@@ -220,18 +263,16 @@ possible configurations of the program $B$ and the transition relation
 $\rightarrow$ is any state transition that respects the semantics of
 the program $B$.
 
---------------------------
-
-An example of another transition system is defined by the
-$\lambda$ calculus. States in this transition system correspond to
-terms in the $\lambda$ calculus in De Bruijn form, and the transition
-relation sets $s \rightarrow t$ exactly when $t$ can be obtained from
-$s$ via a $\beta$ reduction. (We use De Bruijn form so we can ignore
-$\alpha$ renamings, which don't change the ``meaning'' of a
-$\lambda$ term. Of course, using ``normal'' $\lambda$ notation and
-including $\alpha$ renamings in the transition relation, and/or
-including $\eta$ reductions, would also result in a perfectly valid
-transition system.)
+\begin{example}
+An example of another transition system is defined by the $\lambda$
+calculus. States in this transition system correspond to terms in the
+$\lambda$ calculus in De Bruijn form, and the transition relation sets
+$s \rightarrow t$ exactly when $t$ can be obtained from $s$ via a
+$\beta$ reduction. (We use De Bruijn form so we can ignore $\alpha$
+renamings, which don't change the ``meaning'' of a $\lambda$ term. Of
+course, using ``normal'' $\lambda$ notation and including $\alpha$
+renamings in the transition relation would also result in a perfectly
+valid transition system, as wolud including $\eta$ reductions.)
 
 The following diagram shows some portions of this transition system,
 written in normal notation instead of De Bruijn for clarity:
@@ -246,14 +287,16 @@ eventually reaching a normal form, (2) reaching a loop in the
 transition system, or (3) reaching an infinite chain of transitions
 that never reaches a normal form. All three cases are illustrated
 above.
-
---------------------------
+\end{example}
 
 We are going to think of the semantics of a Boolean program as a
 transition system, and essentially check reachability properties on
 this pushdown system. However, the transition system can be infinite,
 and so we need a finite representation. That is where pushdown systems
-come into play. (Figure 2 illustrates an infinite transition system
+come into play: pushdown systems give us one way to represent some
+infinite transition systems.
+
+(Figure 2 illustrates an infinite transition system
 borne out of a program. That program has the property that if
 execution reaches the infinite portion, then it will never terminate,
 but this does not need to be the case: it is possible to have a
@@ -273,20 +316,21 @@ A pushdown system is a way of describing a transition system where:
   information about the current valuation of global variables.)
 \item To decide what states $q$ in the transition system are
   successors of a given state $p$ (i.e. $p \rightarrow q$), you need
-  only look at the top item in the $p$'s stack. The transition may
-  push or pop items from the stack (as well as change the control
-  location), though we restrict it from popping more than one item.
+  only look at the control location and the top item in the $p$'s
+  stack. The transition may push or pop items from the stack, though
+  we restrict it from popping more than one item.
 \end{enumerate}
 
 If you are familiar with a pushdown automaton (PDA), a PDS is very
 similar except there is no input tape or input charracter component of
 the transitions. If you like, you can think of a PDS as exploring the
-configuraton space of a PDA when you have complete control over the
+configuration space of a PDA when you have complete control over the
 input.
 
 The two above restrictions means that we can define a PDS as follows:
 
-\begin{definition} A pushdown system (PDS) $\mathcal{P}$ is a triple $(P, \Gamma,
+\begin{definition}
+  A pushdown system (PDS) $\mathcal{P}$ is a triple $(P, \Gamma,
   \Delta)$ where $P$ is a finite set (the ``control locations''),
   $\Gamma$ is also a finite set (the ``stack alphabet''), and $\Delta$
   is a set of rules of the form
@@ -294,20 +338,23 @@ The two above restrictions means that we can define a PDS as follows:
   \in \Gamma$, and $w \in \Gamma^*$.
 \end{definition}
 
-A PDS defines a transition system in the following way. The set of
+A PDS describes a transition system in the following way. The set of
 states in the transition system is the set of all configurations
 \Config{p}{w} for $p \in P$ and $w \in \Gamma^*$. The transition
 relation is defined as follows: $\Config{p}{\gamma\alpha} \rightarrow
 \Config{q}{w\alpha}$ (with $\gamma \in \Gamma$ and $\alpha \in
 \Gamma^*$) if and only if $\Rule{\Config{p}{\gamma}}{\Config{q}{w}}$
-is a rule in the PDS.
+is a rule in the PDS. Basically, rule says that, if the transition
+system is in control location $p$ and $\gamma$ is on the top of the
+stack, then it can move to control location $q$, pop $\gamma$, and
+push $w$.
 
-Finally, to simplify the post* and pre* algorithms (presented later),
-we add one more restriction: every PDS rule must replace the top item
-on the stack with either zero, one, or two other elements. (This is
-not a fundamental restriction: it is possible to simulate any PDS
-without this restriction by one with it, simply by adding new
-intermediate states.) Rules then either one of the following forms:
+Finally, to simplify the reachability algorithms (presented later), we
+add one more restriction: every PDS rule must replace the top item on
+the stack with either zero, one, or two other elements. (This is not a
+fundamental restriction: it is possible to simulate any PDS without
+this restriction by one with it, simply by adding new intermediate
+states.) Rules are thus of one of the following forms:
 \begin{itemize}
 \item \Rule{\Config{p}{\gamma}}{\Config{p'}{\epsilon}} (which is called a
 $\Delta_0$ rule)
@@ -317,59 +364,67 @@ $\Delta_0$ rule)
   $\Delta_2$ rule)
 \end{itemize}
 
+(Note that it's $\Delta_1$ rules, not $\Delta_0$ rules, which leave
+the stack height unchanged.)
 
 We will be interested in two kinds of reachability questions: forward
-reachability, called post*, and backward reachability, called pre*. In
-both cases, we ask what is reachable from a starting set of
-configurations $C$, and the answer will be the set of reachable (or
+reachability, called \poststar, and backward reachability, called
+\prestar. In both cases, we ask what is reachable from a starting set
+of configurations $C$, and the answer will be the set of reachable (or
 reaching) configurations. The definitions are as follows:
 \begin{itemize}
-\item $post^*_{\mathcal{P}}(C) = \{p' | \exists p\in C. p \rightarrow^*
+\item $\poststar_{\mathcal{P}}(C) = \{p' | \exists p\in C. p \rightarrow^*
   p'\}$
-\item $pre^*_{\mathcal{P}}(C) = \{p | \exists p'\in C. p \rightarrow^*
+\item $\prestar_{\mathcal{P}}(C) = \{p | \exists p'\in C. p \rightarrow^*
   p'\}$
 \end{itemize}
 In both cases, $\rightarrow^*$ is the reflexive transitive closure of
 the transition relation defined by the PDS $\mathcal{P}$. I'll also
-abuse notation and use $post^*(p)$ to mean $post^*(\{p\})$, and
-similarly for pre*.
+abuse notation and use $\poststar(p)$ to mean $\poststar(\{p\})$ for a
+single configuration $p$, and similarly for \prestar.
+
+[DIAGRAM]
 
 Reachability questions can then be expressed in two ways: if we want
 to know whether a configuration $p'$ is reachable from a configuration
-$p$, we can ask whether $p' \in post^*(p)$ or whether $p \in
-pre^*(p')$. (In the case of modeling Boolean programs, $p$ will
+$p$, we can ask whether $p' \in \poststar(p)$ or whether $p \in
+\prestar(p')$. (In the case of modeling Boolean programs, $p$ will
 typically be the starting configuration (or the set of starting
 configurations) and $p'$ will be the error configuration (or set of
 error configurations).
 
-So by expressing a transition system as a PDS we have solved the
-problem of having to finitely represent an infinite transition system,
-but we are not done: the input and output of both pre* and post* may
-themselves be infinite sets, and we need a way of representing those
-sets in such a way that we can still compute pre* and post*.
+By expressing a transition system as a PDS we have solved the problem
+of having to finitely represent an infinite transition system, but we
+are not done: the input and output of both \prestar\ and
+\poststar\ may themselves be infinite sets, and we need a way of
+representing those sets in such a way that we can still compute
+\prestar\ and \poststar. For instance, in figure 2, $\poststar(..)$ is
+infinite.
 
 \subsection{Representing Sets of Configurations}
 
 In order to represent a set of configurations symbolically (and
 finitely), we will use a slightly-modified form of finite
-automaton. For a PDS $\mathcal{P}$, we will define a
-$\mathcal{P}$-automaton as $(Q, \delta, F)$. (I'll usually drop the
-$\mathcal{P}$ suffix and just refer to it as an automaton or
-configuration automaton.) $Q$ is a set of states, and must be a
-superset of $P$ (the PDS's set of states); $\delta: Q \times
-\Gamma_\epsilon \rightarrow \powerset{Q}$ is the transition function;
-$F$ is the set of accepting states. The automaton's alphabet (normally
+automaton.
+
+For a PDS $\mathcal{P}$, we will define a $\mathcal{P}$-automaton as
+$(Q, \delta, F)$. (I'll drop the $\mathcal{P}$ suffix and just refer
+to it as an automaton or configuration automaton.) $Q$ is a set of
+states, and must be a superset of $P$ (the PDS's set of states);
+$\delta: Q \times \Gamma_\epsilon \rightarrow \powerset{Q}$ is the
+transition function; $F$ is the set of accepting states. The
+automaton's alphabet (for standard finite automata, usually called
 $\Sigma$) is the same as the PDS's stack alphabet $\Gamma$, plus
 $\epsilon$.
 
 A configuration automaton $\mathcal{A}$ accepts a configuration
 \Config{p}{w} if $\mathcal{A}$ starts in its state $p$, follows
-transitions according to the next unread symbol in $w$ (starting from
-the top of the stack), and can end in an accepting state $f \in
-F$. (This is just like the standard definition of acceptance in an FA
-except that the machine starts in the configuration's state instead of
-one fixed start state $q_0$, and the symbols it reads are from the
-configuration's stack, top-to-bottom.)
+transitions according to $w$ (starting from the top of the stack), and
+can end in an accepting state $f \in F$. (This is just like the
+standard definition of acceptance in an FA except that the machine
+starts in the configuration's state instead of one fixed start state
+$q_0$, and the symbols it reads are from the configuration's stack,
+top-to-bottom.)
 
 For instance, the following atuomaton accepts the configuration
 \Config{p}{abc}:
@@ -381,31 +436,34 @@ infinite sets of configurations of $\mathcal{P}$. However, not every
 infinite set of configurations can be reprsented by a
 $\mathcal{P}$-automaton, just like not every infinite set of normal
 strings can be represented by a standard finite automaton. If a set of
-configurations \emph{can} be represented, then we say that class is
+configurations \emph{can} be represented, then we say that set is
 ``regular''.
+
+An interesting and important fact is that for any PDS, both
+$\poststar(C)$ and $\prestar(C)$ are regular if $C$ is
+regular. Furthermore, given an automaton representation of $C$, kinds
+of reachability queries can be computed by a simple precess. We will
+discuss the process for \poststar\ in the next section, and
+\prestar\ in the following. Both algorithms have a similar flavor;
+which is easier is a matter of some debate.
+
 
 \subsection{The post* Algorithm}
 
-An interesting and important fact is that for any PDS, both $post*(C)$
-and $pre*(C)$ are regular if C is regular. Furthermore, both can be
-computed starting from a automaton representation of $C$ by a simple
-process. We will discuss the process for post* in this section, and
-pre* in the next. Both have a similar flavor; which is easier is a
-matter of some debate.
-
-Both processes can be explained by presenting one or more simple
-\emph{saturation rules}. A saturation rule tells you to find a
-transition in the automaton and a rule in the PDS which match on their
-state and stack symbol, and then add one or more other transitions if
-they are not already present. This will hopfeully become clear
-momentarily. 
+To compute \prestar\ or \poststar\ on an automaton $\mathcal{A}$, we
+follow one or more \emph{saturation rules}. A saturation rule tells
+you to find a transition in the automaton and a rule in the PDS which
+match on their state and stack symbol, and then add to $\mathcal{A}$
+one or more other transitions if they are not already present. This
+will hopfeully become clear momentarily.
 
 Conceptually, you just check to see if there are any saturation rules
 that can be applied; if there are, then you apply them, but if not,
 the process is complete and the automaton now holds the set of
-configurations that is the post* of what you started with. In an
-actual implementation, this process becomes guided by a worklist; we
-will examine that after describing the saturation rules.
+configurations that is the \poststar\ (or \prestar) of what you
+started with. In an actual implementation, this process becomes guided
+by a worklist; we will examine that after describing the saturation
+rules for the two algorithms.
 
 
 Let's look at our first post* saturation rule. Suppose our automaton
@@ -446,7 +504,7 @@ $\epsilon$ transitions):
    \Trans{p'}{\gamma'}{n}. ($p$, $p'$, and $n$ need not be distinct.)
 
 OK. So now what should we do about $\Delta_0$ and $\Delta_2$ rules?
-Before we go further, you might want to try to predict the saturation
+Before we go further, I encourage you to try to predict the saturation
 rules for these.
 
 Let's look at $\Delta_0$ first. This is actually very similar to the
@@ -468,6 +526,9 @@ Formally, we have the following rule:
    \Rule{\Config{p}{\gamma}}{\Config{p'}{\epsilon}} and a transition
    \Trans{p}{\gamma}{n}, add a new transition
    \Trans{p'}{\epsilon}{n}.
+
+(We'll come back to this rule again in a moment -- it is not yet
+complete.)
 
 Finally, consider the $\Delta_2$ rule
 \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'\gamma''}}. This rule
@@ -494,22 +555,25 @@ And we have the saturation rule
    if necessary.
 
 
-\subsubsection{Correcting our post* saturation rules for $\epsilon$
+\subsubsection{Correcting our \poststar\ saturation rules for $\epsilon$
   transitions}
 
 Unfortunately, the saturation rules in the preceeding section are not
 yet completely correct. To illustrate the problem, consider a PDS with
 the following rules:
+
+\begin{verbatim}
    p A -> p B C
    p B -> p eps
    p C -> p D
+\end{verbatim}
 
 By applying each of these rules in order, we see that the
-configuration \Config{p}{D} is in $post*(\Config{p}{A})$.
+configuration \Config{p}{D} is in $\poststar(\Config{p}{A})$.
 
 However, let's apply the saturation rules exactly as given above,
 starting from an automaton that accepts just the configuration
-\Config{p}{A}. (You may want to try this yourself before reading on!)
+\Config{p}{A}. (Try this yourself before reading on!)
 
 We start with
 
@@ -576,7 +640,11 @@ In this section we will attempt to explain the intuition behind the
 behavior of the state added when dealing with $\Delta_2$ rules.  In
 particular, we want to answer (1) why do we have to ``combine'' states
 to begin with (we'll see what we mean by that), (2) why can we combine
-the states that we do, and (3) why don't we combine more.
+the states that we do, and (3) why don't we combine more. These three
+observations together suggest that the approach stated above, where we
+add a $q_{p,\gamma}$ for each control location $p$ and stack symbol
+$\gamma$, is correct, though I'm not claiming that this constitutes a
+proof.
 
 \subsubsubsection{Why do we have to combine states?}
 
@@ -585,9 +653,9 @@ Consider the PDS with the following rule:
   \Rule{\Config{p}{a}}{\Config{p}{ab}}
 
 Starting from the configuration $c = \Config{p}{a}$, it is hopefully
-clear that $post*(\{c\})$ should be the set of configurations of the
-form \Config{p}{ab*}. (That is, the stack top is $a$ and under it is
-any number of $b$s.
+clear that $\poststar(\{c\})$ should be the set of configurations of
+the form \Config{p}{ab*}. (That is, the stack top is $a$ and under it
+is any number of $b$s.)
 
 Let's see what happens if we use a different $\Delta_2$ saturation
 rule -- one that at first glance seems like it could be reasonable,
@@ -601,7 +669,7 @@ somehow. Stated formally:
    transition \Trans{p}{\gamma}{n}, add a fresh state $q$ then add
    transitions \Trans{p'}{\gamma'}{q} and \Trans{q}{\gamma''}{n}.
 
-Runnng post* with this rule gives the following. We start with the
+Runnng \poststar\ with this rule gives the following. We start with the
 query automaton that represents $\{c\}$:
 
 Then apply the $\Delta_2$ saturation rule:
@@ -614,11 +682,11 @@ And again:
 
 You see the problem.
 
-If we want post* to terminate, we want to be able to avoid adding this
-chain of fresh states. The approach we'll take is to \emph{combine}
-all of these states -- combine states with a common source and
-symbol. So we take all of the states in the dotted region and combine
-it into one:
+If we want \poststar\ to terminate, we want to be able to avoid adding
+this chain of fresh states. The approach we'll take is to
+\emph{combine} all of these states -- combine states with a common
+source and symbol. So we take all of the states in the dotted region
+and combine it into one:
 
 
 Note that the self-loop on $q_{p,a}$ is present because there are
@@ -658,30 +726,34 @@ states into one, which gives us the correct result.
 You just can't.
 
 I don't have as convincing an argument to make here; just it doesn't
-make sense.
+make sense to combine states with a different control location, or a
+different stack symbol.
 
 
-\subsection{The pre* algorithm}
+\subsection{The \prestar\ algorithm}
 
-Now that we've looked at post*, let's look at pre*. In many ways this
-is simpler. Before continuing, you may want to try to produce the
-saturation rule(s) yourself: remember that our goal is to produce an
-automaton that expresses the set of configurations \emph{from} which a
-configuration in the original query automaton is reachable. The
-presentation below (in accordance with the literature) will present
-just one saturation rule for any PDS rule
-\Rule{\Config{p}{\gamma}}{\Config{p}{w}} ($w \in \Gamma^*$), but you
-can either do that or just give separate saturation rules for $\Delta_0$,
-$\Delta_1$, and $\Delta_2$ PDS rules as we did for post*.
+Now that we've looked at \poststar, let's look at \prestar. In many
+ways this is simpler: the presentation below (in accordance with the
+literature) will present just one saturation rule for any PDS rule
+\Rule{\Config{p}{\gamma}}{\Config{p}{w}} ($w \in \Gamma^*$), but why
+that rule works is silghtly harder to think about because we are so
+used to thinking about how program execution will proceed forwards.
+
+Before continuing, try to deduce the saturation rule yourself:
+remember that our goal is to produce an automaton that expresses the
+set of configurations \emph{from} which a configuration in the
+original query automaton is reachable. (If it is easier to think
+about, feel free to state separate saturation rules for $\Delta_0$,
+$\Delta_1$, and $\Delta_2$ PDS rules as we did for \poststar.)
 
 Let's think through what we want in a similar way as before. Suppose
-that we have a configuration $c = \Config{p}{w}$ that is
-represented by our current automaton. We want to add some
-backwards-reachable configurations. Well, how did we get to $c$? If we
-have a rule \Rule{\Config{p'}{\gamma}}{\Config{p}{w'}} where $w'$ is a
-prefix of $w$ (let $w = w'w''$), that gives us one possible way: we
-start in the configuration \Config{p'}{\gamma w''}, apply that rule,
-then arrive in $\Config{p'}{w'w''} = c$.
+that we have a configuration $c = \Config{p}{w}$ that is represented
+by our current automaton. We want to add some backwards-reachable
+configurations. Well, how did the transition system get to $c$? If the
+PDS has a rule \Rule{\Config{p'}{\gamma}}{\Config{p}{w'}} where $w'$
+is a prefix of $w$ (let $w = w'w''$), that gives us one possible way:
+we start in the configuration \Config{p'}{\gamma w''}, apply that
+rule, then arrive in $\Config{p'}{w'w''} = c$:
 
 How does this look in the automaton world? If $c$ is accepted by the
 current automaton, then there's a series of transitions out of $p$
@@ -712,33 +784,53 @@ program. I'll try to describe things in those terms. In the final
 section, I'll try to relate that picture to the somewhat more abstract
 presentation in the literature.
 
-Finally, one notion that I didn't get right away was what is meant by
-\emph{weight}. What you should not have as a model in your mind is
-something like a weighted graph from graph theory, like you might run
-some weighted shortest path problem on. This picture has only enough
-truth in it that I can't say it's \emph{completely} incorrect. Weights
-in general are a much more abstract notion; as you'll see momentarily,
-in our setting, they will represent abstract transformers.
+Finally, one notion that I didn't get right away when I was learning
+is what is meant by \emph{weight}. What you should \emph{not} have as
+a model in your mind is something like a weighted graph from graph
+theory, like you might run some weighted shortest path problem
+on. This picture has enough truth in it that I can't say it's
+\emph{completely} incorrect, but if that's all you know it's very
+misleading. Weights in general are a much more abstract notion; as
+you'll see momentarily, in our setting, they will represent abstract
+transformers.
+
+(Weights in the sense of an typical algorithms course are a specific
+instance of these more general weights, and many traditional
+algorithms on weighted graphs like Dijkstra's algorithm have
+corresponding generalized versions. Sometimes the literature will even
+discuss these generalized versions calling them ``shortest path''
+problems, but they'll still be using the generalized weights.)
 
 \subsection{Weights for dataflow analysis and the MOAVP goals}
 
 Consider some typical dataflow analysis. There's some domain $D$ of
-possible dataflow facts (e.g. $\powerset(vars \times
-\bbN_\bot^\top)$ for constant propagation and a ``meet'' ($\meet$)
-that is used to combine dataflow facts when paths in the program
-converge. (We are using a dataflow-analysis viewpoint: $\bot$
-represents ``anything is possible'' and $\meet$ moves us closer to
-$\bot$.) When propagating information ``through'' a basic block
-$b$, you use some transformer $\tau_b: D \rightarrow D$ to translate
-the dataflow fact before the block to the one after the block, or vice
-versa (depending on whether you're doing a forwards or backwards
+possible dataflow facts (e.g. $\powerset(vars \times \bbN_\bot^\top)$
+for constant propagation and a ``meet'' ($\meet$) that is used to
+combine dataflow facts when paths in the program converge. (We are
+using a dataflow-analysis viewpoint: $\bot$ represents ``anything is
+possible'' and $\meet$ is used to combine the values of two paths.)
+When propagating information ``through'' a basic block $b$, you use
+some transformer $\tau_b: D \rightarrow D$ to translate the dataflow
+fact before the block to the one after the block, or vice versa
+(depending on whether you're doing a forwards or backwards
 analysis). The goal is to find the ``meet over all valid paths''
-solution from the program's start to its finish.
+solution from the program's start to its finish\footnotemark.
 
-(If you're familiar with ``meet over all paths'' but not ``valid
+\footnotetext{I'll discuss WPDSs as if they're actually computing the
+  MOAVP solution to a data flow problem, but really this is only true
+  if the dataflow problem is distributive -- that is, $(a \extend b)
+  \combine (a \extend c) = a \extend (b \combine c)$ and similarly for
+  the right-hand side. In dataflow terms, this says that instead of
+  looking at the (possibly-infinite) set of paths from start to
+  finish, computing the dataflow transformers across that path, then
+  combining the results from the different paths, I can instead
+  combine the results ``as I go along'', at places where paths come
+  together.}
+
+If you're familiar with ``meet over all paths'' but not ``valid
 paths'', a ``valid path'' is one where control does not use some call
 site $c$ to call a function \Code{foo} but then return to a different
-call site. This is what gives us context sensitivity.)
+call site. This is what gives us context sensitivity.
 
 When doing dataflow analysis with a WPDS, we actually treat the set of
 transformers $\tau_b$ explicitly. Our \emph{weight domain} then
@@ -756,7 +848,7 @@ invent a ``reversed composition'' operator. Since we have to make
 something up anyway, we'll match the usual WPDS literature and use
 $\tau_1 \extend \tau_2 \extend \tau_3$ for $\tau_3 \circ \tau_2 \circ
 \tau_1$. We pronounce $\extend$ as ``extend'', but really it's just
-function composition.
+function composition in our setting.
 
 The second operation is meet, $\meet$. We know how to meet two data
 values $d_1$ and $d_2$, but not necessarily transformers. But it's
