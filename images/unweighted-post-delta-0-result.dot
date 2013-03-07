@@ -4,5 +4,5 @@ digraph "A" {
 
   "p" -> "n"  [label="gamma"];
   "p'" -> "n" [label="epsilon"];
-  "n" -> "acc" [label="alpha"];
+  "n" -> "acc" [label="alpha", style="dotted"];
 }

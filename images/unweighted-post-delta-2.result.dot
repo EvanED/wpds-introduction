@@ -3,7 +3,7 @@ digraph "A" {
   "acc" [label="", peripheries=2];
 
   "p" -> "n"  [label="gamma"];
-  "n" -> "acc" [label="alpha"];
+  "n" -> "acc" [label="alpha", style="dotted"];
 
   "p'" -> "mid" [label="gamma'"];
   "mid" -> "n" [label="gamma''"];

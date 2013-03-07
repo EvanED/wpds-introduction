@@ -4,5 +4,5 @@ digraph "A" {
 
   "p'";
   "p" -> "n"  [label="w'"];
-  "n" -> "acc" [label="w''"];
+  "n" -> "acc" [label="w''", style="dotted"];
 }
