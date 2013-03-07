@@ -1,0 +1,8 @@
+digraph "A" {
+  rankdir=LR;
+  "acc" [label="", peripheries=2];
+
+  "p" -> "n"  [label="gamma"];
+  "p'" -> "n" [label="epsilon"];
+  "n" -> "acc" [label="alpha"];
+}

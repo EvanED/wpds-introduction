@@ -1,0 +1,18 @@
+digraph "A" {
+  rankdir = LR;
+  acc [label="", peripheries=2];
+
+  "p" -> acc [label="a"];
+
+  p    -> mid1 [label="a"];
+  p    -> mid1 [label="c"];
+  mid1 -> acc  [label="b"];
+
+  p    -> mid2 [label="a"];
+  p    -> mid2 [label="c"];
+  mid2 -> mid1 [label="b"];
+
+  p    -> mid3 [label="a"];
+  p    -> mid3 [label="c"];
+  mid3 -> mid2 [label="b"];
+}

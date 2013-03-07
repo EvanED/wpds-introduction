@@ -1,0 +1,11 @@
+digraph "A" {
+  rankdir = LR;
+  acc [label="", peripheries=2];
+
+  "p" -> acc [label="A"];
+
+  "p" -> mid [label="B"];
+  mid -> acc [label="C"];
+
+  "p" -> mid [label="epsilon"];
+}

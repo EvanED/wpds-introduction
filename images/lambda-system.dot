@@ -1,0 +1,15 @@
+digraph "lambda" {
+  "..." [peripheries=0];
+
+  "(\x.\y.yx)(\z.zz)(\a.a)" -> "(\x.\y.yx)(\a.a)(\a.a)";
+  "(\x.\y.yx)(\z.zz)(\a.a)" -> "(\a.a)(\z.zz)";
+  "(\x.\y.yx)(\a.a)(\a.a)" -> "(\a.a)(\a.a)";
+  "(\a.a)(\a.a)" -> "(\a.a)";
+  "(\a.a)(\z.zz)" -> "(\z.zz)";
+
+  "(\x.xx)(\x.xx)" -> "(\x.xx)(\x.xx)";
+
+  "(\x.xxx)(\x.xxx)" -> "(\x.xxx)(\x.xxx)(\x.xxx)";
+  "(\x.xxx)(\x.xxx)(\x.xxx)" -> "(\x.xxx)(\x.xxx)(\x.xxx)(\x.xxx)";
+  "(\x.xxx)(\x.xxx)(\x.xxx)(\x.xxx)" -> "...";
+}

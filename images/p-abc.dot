@@ -1,0 +1,8 @@
+digraph "p-abc" {
+  rankdir=LR;
+  "q_2" [peripheries=2];
+
+  "p" -> "q_0"   [label="a"];
+  "q_0" -> "q_1" [label="b"];
+  "q_1" -> "q_2" [label="c"];
+}
