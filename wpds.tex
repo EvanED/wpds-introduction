@@ -145,7 +145,8 @@ and the second element of which is a valuation of the locals. The top
 of the stack is given first.
 
 Note that the statement addresses stored in the stack are offset from
-what is typical in real programs. Usually the current address is
+what is typical in real programs. In the typical compilation model the
+current address is
 stored in a register (a global location), and the stack frame of
 \Code{foo()} stores the return address of its \emph{caller}. Our
 semantics store the current address in the current stack frame, and
@@ -430,27 +431,34 @@ the stack height unchanged.)
 
 We will be interested in two kinds of reachability questions: forward
 reachability, called \poststar, and backward reachability, called
-\prestar. In both cases, we ask what is reachable from a starting
-configuration $c$ or set of configurations $C$, and the answer will be
-the set of reachable (or reaching) configurations. The definitions for
-the single-configuration version are as follows:
+\prestar. Given a configuration $c$, we can ask for $c$'s successors
+and predecessors:
+\begin{itemize}
+\item $\post(c) = \{ c' \mid c \rightarrow c' \}$
+\item $\pre(c') = \{ c \mid c \rightarrow c' \}$
+\end{itemize}
+We'll slightly abuse $\post$ and $\pre$ to operate on sets of
+configurations in addition to just singletons:
+\begin{itemize}
+\item $\post(C) = \{p' \mid \exists p\in C. p \rightarrow p' \}
+                = \bigcup_{c \in C} \post(c)$
+\item $\pre(C') = \{p \mid \exists p'\in C. p \rightarrow p' \}
+                = \bigcup_{c' \in C'} \pre(c')$
+\end{itemize}
+
+$\post$ and $\pre$ tell us, given some states, what is reachable in a
+single step of the transition system. By taking the
+reflexive-transitive closure, we can ask about what configurations are
+reachable in any number of steps:
 \begin{itemize}
 \item $\poststar_{\mathcal{P}}(c) = \{c' \mid (c, c') \in \rightarrow^*\}$
 \item $\prestar_{\mathcal{P}}(c') = \{c  \mid (c, c') \in \rightarrow^*\}$
 \end{itemize}
 In both cases, $\rightarrow^*$ is the reflexive transitive closure of
 the transition relation defined by the PDS $\mathcal{P}$, and I'll
-write $c \rightarrow^* c'$ for $(c, c') \in \rightarrow^*$.
-
-We don't have to restrict ourselves to a single starting or ending
-configuration however, but can ask a query for an arbitrary set $C$,
-which is how we will consider it in the future:
-\begin{itemize}
-\item $\poststar_{\mathcal{P}}(C) = \bigcup_{c \in C} \poststar_{\mathcal{P}}(c)= \{p' \mid \exists p\in C. p \rightarrow^*
-  p'\}$x
-\item $\prestar_{\mathcal{P}}(C) = \bigcup_{c \in C} \prestar_{\mathcal{P}}(c)= \{p \mid \exists p'\in C. p \rightarrow^*
-  p'\}$
-\end{itemize}
+write $c \rightarrow^* c'$ for $(c, c') \in \rightarrow^*$. And again,
+we'll extend $\poststar$ and $\prestar$ to operate on sets of
+configurations.
 
 \begin{center}
   \includegraphics[width=0.5\textwidth]{images/post-pre.pdf}
@@ -459,7 +467,7 @@ which is how we will consider it in the future:
 Reachability questions can then be expressed in two ways: if we want
 to know whether a configuration $p'$ is reachable from a configuration
 $p$, we can ask whether $p' \in \poststar(p)$ or whether $p \in
-\prestar(p')$. (In the case of modeling Boolean programs, $p$ will
+\prestar(p')$. In the case of modeling Boolean programs, $p$ will
 typically be the starting configuration (or the set of starting
 configurations) and $p'$ will be the error configuration (or set of
 error configurations).
@@ -470,7 +478,7 @@ are not done: the input and output of both \prestar\ and
 \poststar\ may themselves be infinite sets, and we need a way of
 representing those sets in such a way that we can still compute
 \prestar\ and \poststar. For instance, in
-\cref{fi:program-transition-graph}, $\poststar(..)$ is infinite.
+\cref{fi:program-transition-graph}, $\poststar(T,0T)$ is infinite.
 
 \subsection{Representing Sets of Configurations}
 
@@ -522,7 +530,8 @@ Furthermore, given an automaton representation of $C$, reachability
 queries can be computed by a simple precess on that automaton. We will
 discuss the process for \poststar\ in the next section, and
 \prestar\ in the following. Both algorithms have a similar flavor;
-which is easier is a matter of some debate.
+which is easier is a matter of some debate. I will present $\poststar$
+first, as most people more naturally think forward.
 
 
 \subsection{The post* Algorithm}
@@ -563,7 +572,8 @@ $\alpha$ some string in $L(n)$.
 Now consider the PDS rule
 \Rule{\Config{p}{\gamma}}{\Config{p'}{\gamma'}}. This rule means that,
 in the transition system defined by $\mathcal{P}$, a successor of
-\Config{p}{\gamma\alpha} is \Config{p'}{\gamma'\alpha}. This means
+\Config{p}{\gamma\alpha} is \Config{p'}{\gamma'\alpha}. \emph{This} in
+turn means
 that \Config{p'}{\gamma'\alpha} must be accepted by the post*
 automaton.
 
@@ -694,7 +704,7 @@ transition.
 
 (Note: a similar situation can arise with the $\epsilon$ transition on
 the ``other side'' of the transition we're interested in, but only if
-the initial query automaton has certain structures.)
+the initial query automaton has certain unusual structures.)
 
 We can handle this situation in two ways. The first is we modify our
 three saturation rules so that they look for \emph{paths} rather than
